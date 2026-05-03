@@ -160,7 +160,7 @@ pub async fn create(pool: &SqlitePool, body: &SysUserCreate) -> Result<i64, sqlx
         ) VALUES (
             ?, ?, ?, ?, 'dark', '', '#fff', '#1890ff',
             888, ?, ?, 1,
-            datetime('now'), datetime('now')
+            datetime('now', 'localtime'), datetime('now', 'localtime')
         )
         RETURNING id"#,
     )
@@ -191,7 +191,7 @@ pub async fn update(
     let enable = body.enable.unwrap_or(cur.enable);
 
     let r = sqlx::query(
-        r#"UPDATE sys_users SET nick_name = ?, phone = ?, email = ?, enable = ?, updated_at = datetime('now')
+        r#"UPDATE sys_users SET nick_name = ?, phone = ?, email = ?, enable = ?, updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(&nick_name)
@@ -214,7 +214,7 @@ pub async fn update_password(
         sqlx::Error::Protocol("bcrypt hash failed".into())
     })?;
     let r = sqlx::query(
-        r#"UPDATE sys_users SET password = ?, updated_at = datetime('now')
+        r#"UPDATE sys_users SET password = ?, updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(&pwd_hash)
@@ -226,7 +226,7 @@ pub async fn update_password(
 
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
-        r#"UPDATE sys_users SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_users SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)

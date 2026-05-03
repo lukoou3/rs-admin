@@ -86,7 +86,7 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Shellcode>, 
 pub async fn create(pool: &SqlitePool, body: &ShellcodeUpsert) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO code_shellcode (created_at, updated_at, name, code, "desc")
-           VALUES (datetime('now'), datetime('now'), ?, ?, ?)
+           VALUES (datetime('now', 'localtime'), datetime('now', 'localtime'), ?, ?, ?)
            RETURNING id"#,
     )
     .bind(&body.name)
@@ -104,7 +104,7 @@ pub async fn update(
 ) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE code_shellcode
-           SET updated_at = datetime('now'), name = ?, code = ?, "desc" = ?
+           SET updated_at = datetime('now', 'localtime'), name = ?, code = ?, "desc" = ?
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(&body.name)
@@ -119,7 +119,7 @@ pub async fn update(
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE code_shellcode
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -134,7 +134,7 @@ pub async fn soft_delete_ids(pool: &SqlitePool, ids: &[i64]) -> Result<u64, sqlx
     }
     let mut qb = QueryBuilder::<Sqlite>::new(
         r#"UPDATE code_shellcode
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE deleted_at IS NULL AND id IN ("#,
     );
     let mut sep = qb.separated(", ");

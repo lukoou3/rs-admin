@@ -32,7 +32,42 @@ pub fn routes() -> Router<AppState> {
     Router::<AppState>::new()
         .route("/tables", axum::routing::get(list_tables))
         .route("/preview", axum::routing::get(preview_table))
-        .route("/", delete(clear_deleted_rows))
+        .route("/", delete(clear_deleted_rows_handler))
+}
+
+/// 含 `deleted_at` 的表名（与 sqlite_master 扫描一致）。
+pub async fn table_names_with_deleted_at(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"SELECT name FROM sqlite_master
+           WHERE type='table' AND sql IS NOT NULL AND sql LIKE '%deleted_at%'
+           ORDER BY name"#,
+    )
+    .fetch_all(pool)
+    .await
+}
+
+/// 自动维护：只删除「已软删且删除时间早于 3 个月前」的行（手动 API 仍可按表全量清除）。
+const AUTO_PURGE_SOFT_DELETE_OLDER_MONTHS: &str = "3";
+
+pub async fn purge_all_soft_deleted(pool: &SqlitePool) -> Result<u64, sqlx::Error> {
+    let tables = table_names_with_deleted_at(pool).await?;
+    let mut total = 0u64;
+    for t in tables {
+        let sql = format!(
+            r#"DELETE FROM "{}" WHERE deleted_at IS NOT NULL
+               AND datetime(deleted_at) < datetime('now', 'localtime', '-{} months')"#,
+            t,
+            AUTO_PURGE_SOFT_DELETE_OLDER_MONTHS
+        );
+        let r = sqlx::query(&sql).execute(pool).await?;
+        total += r.rows_affected();
+    }
+    Ok(total)
+}
+
+pub async fn vacuum_sqlite(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query("VACUUM").execute(pool).await?;
+    Ok(())
 }
 
 fn validate_identifier(name: &str) -> AppResult<()> {
@@ -58,13 +93,9 @@ async fn table_has_deleted_at(pool: &SqlitePool, table: &str) -> AppResult<bool>
 }
 
 pub async fn list_tables(State(state): State<AppState>) -> AppResult<Json<Vec<String>>> {
-    let names: Vec<String> = sqlx::query_scalar(
-        r#"SELECT name FROM sqlite_master
-           WHERE type='table' AND sql IS NOT NULL AND sql LIKE '%deleted_at%'
-           ORDER BY name"#,
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let names = table_names_with_deleted_at(&state.pool)
+        .await
+        .map_err(AppError::from)?;
     Ok(Json(names))
 }
 
@@ -150,13 +181,16 @@ pub struct ClearedResp {
     pub deleted: u64,
 }
 
-pub async fn clear_deleted_rows(
+async fn clear_deleted_rows_handler(
     State(state): State<AppState>,
     Json(body): Json<ClearBody>,
 ) -> AppResult<Json<ClearedResp>> {
-    let table = body.table.trim();
+    clear_deleted_rows(&state.pool, body.table.trim()).await
+}
+
+pub async fn clear_deleted_rows(pool: &SqlitePool, table: &str) -> AppResult<Json<ClearedResp>> {
     validate_identifier(table)?;
-    if !table_has_deleted_at(&state.pool, table).await? {
+    if !table_has_deleted_at(pool, table).await? {
         return Err(AppError::BadRequest("表不存在或无 deleted_at 字段".into()));
     }
 
@@ -165,7 +199,7 @@ pub async fn clear_deleted_rows(
         table
     );
     let r = sqlx::query(&sql)
-        .execute(&state.pool)
+        .execute(pool)
         .await
         .map_err(AppError::from)?;
     Ok(Json(ClearedResp {

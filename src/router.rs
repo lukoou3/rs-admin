@@ -87,6 +87,10 @@ pub fn routes(state: AppState) -> Router {
         .nest("/tools/clear-delete-data", tools_clear_delete::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
+            crate::operation_log::middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
             auth::auth_middleware,
         ));
 

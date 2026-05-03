@@ -124,7 +124,7 @@ impl ExecScriptEngine {
 
         let stdout_buf = Arc::new(Mutex::new(Vec::new()));
         let stderr_buf = Arc::new(Mutex::new(Vec::new()));
-        let start = chrono::Utc::now().naive_utc();
+        let start = chrono::Local::now().naive_local();
 
         let slot = Arc::new(RwLock::new(RunSlot {
             finished: 0,
@@ -159,7 +159,7 @@ impl ExecScriptEngine {
                     w.finished = 1;
                     w.rst_code = 1;
                     w.err = Some(format!("启动进程失败: {e}"));
-                    w.end_time = Some(chrono::Utc::now().naive_utc());
+                    w.end_time = Some(chrono::Local::now().naive_local());
                     return;
                 }
             };
@@ -185,7 +185,7 @@ impl ExecScriptEngine {
             let _ = tokio::join!(h1, h2);
 
             let mut w = slot.write().await;
-            w.end_time = Some(chrono::Utc::now().naive_utc());
+            w.end_time = Some(chrono::Local::now().naive_local());
             w.finished = 1;
             match status {
                 Ok(st) => {

@@ -228,7 +228,7 @@ pub async fn create_header(
 ) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO sys_dictionaries (name, type, status, "desc", created_at, updated_at)
-           VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
            RETURNING id"#,
     )
     .bind(body.name.trim())
@@ -246,7 +246,7 @@ pub async fn update_header(
     body: &SysDictionaryUpdate,
 ) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
-        r#"UPDATE sys_dictionaries SET name = ?, type = ?, status = ?, "desc" = ?, updated_at = datetime('now')
+        r#"UPDATE sys_dictionaries SET name = ?, type = ?, status = ?, "desc" = ?, updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(body.name.trim())
@@ -265,7 +265,7 @@ pub async fn soft_delete_header_and_details(
 ) -> Result<u64, sqlx::Error> {
     let mut ex = pool.begin().await?;
     let r1 = sqlx::query(
-        r#"UPDATE sys_dictionary_details SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_dictionary_details SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE sys_dictionary_id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -273,7 +273,7 @@ pub async fn soft_delete_header_and_details(
     .await?;
 
     let r2 = sqlx::query(
-        r#"UPDATE sys_dictionaries SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_dictionaries SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -296,7 +296,7 @@ pub async fn soft_delete_headers_and_details(
 
     let mut details_qb = QueryBuilder::<Sqlite>::new(
         r#"UPDATE sys_dictionary_details
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE deleted_at IS NULL AND sys_dictionary_id IN ("#,
     );
     let mut details_sep = details_qb.separated(", ");
@@ -308,7 +308,7 @@ pub async fn soft_delete_headers_and_details(
 
     let mut headers_qb = QueryBuilder::<Sqlite>::new(
         r#"UPDATE sys_dictionaries
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE deleted_at IS NULL AND id IN ("#,
     );
     let mut headers_sep = headers_qb.separated(", ");
@@ -341,7 +341,7 @@ pub async fn create_detail(
 ) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO sys_dictionary_details (label, value, status, sort, sys_dictionary_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+           VALUES (?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
            RETURNING id"#,
     )
     .bind(body.label.trim())
@@ -360,7 +360,7 @@ pub async fn update_detail(
     body: &SysDictionaryDetailPatch,
 ) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
-        r#"UPDATE sys_dictionary_details SET label = ?, value = ?, status = ?, sort = ?, updated_at = datetime('now')
+        r#"UPDATE sys_dictionary_details SET label = ?, value = ?, status = ?, sort = ?, updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(body.label.trim())
@@ -375,7 +375,7 @@ pub async fn update_detail(
 
 pub async fn soft_delete_detail(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
-        r#"UPDATE sys_dictionary_details SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_dictionary_details SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)

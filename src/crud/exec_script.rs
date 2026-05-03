@@ -136,7 +136,7 @@ pub async fn create(pool: &SqlitePool, body: &ExecScriptUpsert) -> Result<i64, s
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO exec_script (created_at, updated_at, name, cate, interpreter, encoding,
               default_params, content, "desc")
-           VALUES (datetime('now'), datetime('now'), ?, ?, ?, ?, ?, ?, ?)
+           VALUES (datetime('now', 'localtime'), datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?, ?)
            RETURNING id"#,
     )
     .bind(&body.name)
@@ -154,7 +154,7 @@ pub async fn create(pool: &SqlitePool, body: &ExecScriptUpsert) -> Result<i64, s
 pub async fn update(pool: &SqlitePool, id: i64, body: &ExecScriptUpsert) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE exec_script
-           SET updated_at = datetime('now'), name = ?, cate = ?, interpreter = ?, encoding = ?,
+           SET updated_at = datetime('now', 'localtime'), name = ?, cate = ?, interpreter = ?, encoding = ?,
                default_params = ?, content = ?, "desc" = ?
            WHERE id = ? AND deleted_at IS NULL"#,
     )
@@ -174,7 +174,7 @@ pub async fn update(pool: &SqlitePool, id: i64, body: &ExecScriptUpsert) -> Resu
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE exec_script
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -189,7 +189,7 @@ pub async fn soft_delete_ids(pool: &SqlitePool, ids: &[i64]) -> Result<u64, sqlx
     }
     let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        "UPDATE exec_script SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+        "UPDATE exec_script SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime') WHERE id IN ({placeholders}) AND deleted_at IS NULL"
     );
     let mut q = sqlx::query(&sql);
     for id in ids {
@@ -208,7 +208,7 @@ pub async fn update_last_exec(
     last_exec_info: &str,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        r#"UPDATE exec_script SET updated_at = datetime('now'),
+        r#"UPDATE exec_script SET updated_at = datetime('now', 'localtime'),
            last_exec_start_time = ?,
            last_exec_end_time = ?,
            last_exec_params = ?,

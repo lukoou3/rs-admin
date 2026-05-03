@@ -5,8 +5,10 @@ mod error;
 mod html2md;
 mod exec_script_engine;
 mod list_params;
+mod operation_log;
 mod router;
 mod schema;
+mod maintenance;
 mod tools_clear_delete;
 
 pub use config::CliArgs;
@@ -42,6 +44,12 @@ pub async fn run(args: CliArgs) -> Result<()> {
     schema::ensure_exec_script_table(&pool)
         .await
         .with_context(|| "初始化 exec_script 表失败")?;
+    schema::ensure_sys_operation_records_table(&pool)
+        .await
+        .with_context(|| "初始化 sys_operation_records 表失败")?;
+
+    maintenance::run_startup_maintenance(&pool, &cfg.maintenance).await;
+    maintenance::spawn_scheduled_maintenance(pool.clone(), cfg.maintenance);
 
     let state = AppState {
         pool,

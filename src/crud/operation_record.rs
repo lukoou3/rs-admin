@@ -130,9 +130,43 @@ pub async fn list(
     Ok((out, total))
 }
 
+/// 仅写入元数据（body / resp / error_message 为空）。
+pub async fn insert_metadata(
+    pool: &SqlitePool,
+    user_id: i64,
+    ip: &str,
+    method: &str,
+    path: &str,
+    status: i64,
+    latency_ns: i64,
+    agent: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"INSERT INTO sys_operation_records (
+               created_at, updated_at, deleted_at,
+               user_id, ip, method, path, status, latency, agent,
+               error_message, body, resp
+           ) VALUES (
+               datetime('now', 'localtime'), datetime('now', 'localtime'), NULL,
+               ?, ?, ?, ?, ?, ?, ?,
+               '', '', ''
+           )"#,
+    )
+    .bind(user_id)
+    .bind(ip)
+    .bind(method)
+    .bind(path)
+    .bind(status)
+    .bind(latency_ns)
+    .bind(agent)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
-        r#"UPDATE sys_operation_records SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_operation_records SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -146,7 +180,7 @@ pub async fn soft_delete_ids(pool: &SqlitePool, ids: &[i64]) -> Result<u64, sqlx
         return Ok(0);
     }
     let mut qb = sqlx::QueryBuilder::new(
-        r#"UPDATE sys_operation_records SET deleted_at = datetime('now'), updated_at = datetime('now')
+        r#"UPDATE sys_operation_records SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE deleted_at IS NULL AND id IN ("#,
     );
     let mut sep = qb.separated(", ");

@@ -95,7 +95,7 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Datasource>,
 pub async fn create(pool: &SqlitePool, body: &DatasourceUpsert) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO sql_datasource (created_at, updated_at, name, alias, cate, introduction, sql)
-           VALUES (datetime('now'), datetime('now'), ?, ?, ?, ?, ?)
+           VALUES (datetime('now', 'localtime'), datetime('now', 'localtime'), ?, ?, ?, ?, ?)
            RETURNING id"#,
     )
     .bind(&body.name)
@@ -115,7 +115,7 @@ pub async fn update(
 ) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE sql_datasource
-           SET updated_at = datetime('now'), name = ?, alias = ?, cate = ?, introduction = ?, sql = ?
+           SET updated_at = datetime('now', 'localtime'), name = ?, alias = ?, cate = ?, introduction = ?, sql = ?
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(&body.name)
@@ -132,7 +132,7 @@ pub async fn update(
 pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE sql_datasource
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE id = ? AND deleted_at IS NULL"#,
     )
     .bind(id)
@@ -147,7 +147,7 @@ pub async fn soft_delete_ids(pool: &SqlitePool, ids: &[i64]) -> Result<u64, sqlx
     }
     let mut qb = QueryBuilder::<Sqlite>::new(
         r#"UPDATE sql_datasource
-           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           SET deleted_at = datetime('now', 'localtime'), updated_at = datetime('now', 'localtime')
            WHERE deleted_at IS NULL AND id IN ("#,
     );
     let mut sep = qb.separated(", ");

@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -43,37 +44,115 @@ fn maintenance_interval() -> Duration {
     Duration::from_secs(secs)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServiceCommand {
+    Install,
+    Uninstall,
+    Start,
+    Stop,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppMode {
+    Run,
+    Service(ServiceCommand),
+}
+
+#[derive(Clone, Debug)]
 pub struct CliArgs {
     pub listen: Option<String>,
     pub database: Option<String>,
+    pub mode: AppMode,
 }
 
 impl CliArgs {
     pub fn parse() -> Self {
+        Self::parse_from(env::args_os().skip(1))
+    }
+
+    pub fn parse_from<I>(args: I) -> Self
+    where
+        I: IntoIterator<Item = OsString>,
+    {
         let mut listen = None;
         let mut database = None;
-        let mut it = env::args().skip(1);
+
+        let mut mode = AppMode::Run;
+        let mut it = args.into_iter();
         while let Some(arg) = it.next() {
+            let arg = arg.to_string_lossy().to_string();
             match arg.as_str() {
                 "--listen" | "-l" => {
                     if let Some(v) = it.next() {
-                        listen = Some(v);
+                        listen = Some(v.to_string_lossy().to_string());
                     }
                 }
                 "--database" | "--db" | "-d" => {
                     if let Some(v) = it.next() {
-                        database = Some(v);
+                        database = Some(v.to_string_lossy().to_string());
+                    }
+                }
+                "service" => {
+                    if let Some(v) = it.next() {
+                        mode = match v.to_string_lossy().to_ascii_lowercase().as_str() {
+                            "install" => AppMode::Service(ServiceCommand::Install),
+                            "uninstall" => AppMode::Service(ServiceCommand::Uninstall),
+                            "start" => AppMode::Service(ServiceCommand::Start),
+                            "stop" => AppMode::Service(ServiceCommand::Stop),
+                            _ => AppMode::Run,
+                        };
                     }
                 }
                 _ => {}
             }
         }
-        Self { listen, database }
+        Self {
+            listen,
+            database,
+            mode,
+        }
+    }
+
+    pub fn service_launch_arguments(&self) -> Vec<OsString> {
+        let mut args = Vec::new();
+        if let Some(listen) = &self.listen {
+            args.push(OsString::from("--listen"));
+            args.push(OsString::from(listen));
+        }
+        if let Some(database) = &self.database {
+            args.push(OsString::from("--database"));
+            args.push(OsString::from(database));
+        }
+        args
+    }
+}
+
+pub fn app_dir() -> PathBuf {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if cwd.join("Cargo.toml").is_file()
+        || cwd.join("rs-admin.db").is_file()
+        || cwd.join("web").join("dist").is_dir()
+    {
+        return cwd;
+    }
+    env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|parent| parent.to_path_buf()))
+        .unwrap_or(cwd)
+}
+
+pub fn resolve_relative_path(raw: &str) -> PathBuf {
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        path
+    } else {
+        app_dir().join(path)
     }
 }
 
 fn default_database_url() -> String {
-    "sqlite:./rs-admin.db".to_string()
+    let path = resolve_relative_path("rs-admin.db");
+    format!("sqlite:{}", path.to_string_lossy().replace('\\', "/"))
 }
 
 fn normalize_database_url(raw: &str) -> String {
@@ -84,7 +163,9 @@ fn normalize_database_url(raw: &str) -> String {
     if trimmed.starts_with("sqlite:") {
         return trimmed.to_string();
     }
-    let p = PathBuf::from(trimmed).to_string_lossy().replace('\\', "/");
+    let p = resolve_relative_path(trimmed)
+        .to_string_lossy()
+        .replace('\\', "/");
     format!("sqlite:{p}")
 }
 

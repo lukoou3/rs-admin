@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing_rolling_file::{RollingConditionBase, RollingFileAppenderBase};
 use tracing_subscriber::{
     EnvFilter, Registry,
@@ -6,6 +6,7 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
+use tracing_appender::non_blocking::WorkerGuard;
 
 /// 日志行内时间戳：本地时间（与 SQLite `localtime` 等业务一致）。
 #[derive(Clone, Copy)]
@@ -21,17 +22,18 @@ impl FormatTime for LocalTimeFmt {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn init_env() {
     dotenvy::dotenv().ok();
+    let env_file = rs_admin::app_dir().join(".env");
+    dotenvy::from_path(env_file).ok();
+}
 
-    let log_dir = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
+fn init_logging() -> Result<Option<WorkerGuard>> {
+    let log_dir_raw = std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".to_string());
+    let log_dir = rs_admin::resolve_relative_path(&log_dir_raw);
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
-        eprintln!("无法创建日志目录 {log_dir}: {e}");
+        eprintln!("无法创建日志目录 {}: {e}", log_dir.display());
     }
-
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
 
     let max_file_size = std::env::var("LOG_MAX_FILE_SIZE")
         .unwrap_or_else(|_| "52428800".to_string())
@@ -43,29 +45,9 @@ async fn main() -> Result<()> {
         .parse::<usize>()
         .unwrap_or(3);
 
-    let log_filename = std::path::PathBuf::from(&log_dir).join("rs-admin.log");
-
-    let file_appender = RollingFileAppenderBase::new(
-        log_filename,
-        RollingConditionBase::new().max_size(max_file_size),
-        max_file_count,
-    )
-    .unwrap();
-
-    let (non_blocking, _log_guard) = file_appender.get_non_blocking_appender();
+    let log_filename = log_dir.join("rs-admin.log");
 
     let timer = LocalTimeFmt;
-
-    let file_layer = fmt::layer()
-        .with_timer(timer)
-        .with_writer(non_blocking)
-        .with_ansi(false);
-
-    let stderr_layer = fmt::layer()
-        .with_timer(timer)
-        .with_writer(std::io::stderr)
-        .with_ansi(true);
-
     let mirror_stderr = std::env::var("LOG_MIRROR_STDERR")
         .map(|v| {
             let t = v.trim().to_ascii_lowercase();
@@ -73,13 +55,95 @@ async fn main() -> Result<()> {
         })
         .unwrap_or(true);
 
-    let subscriber = Registry::default().with(env_filter).with(file_layer);
-    if mirror_stderr {
-        subscriber.with(stderr_layer).init();
-    } else {
-        subscriber.init();
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn"));
+
+    match RollingFileAppenderBase::new(
+        log_filename.clone(),
+        RollingConditionBase::new().max_size(max_file_size),
+        max_file_count,
+    ) {
+        Ok(file_appender) => {
+            let (non_blocking, log_guard) = file_appender.get_non_blocking_appender();
+            let file_layer = fmt::layer()
+                .with_timer(timer)
+                .with_writer(non_blocking)
+                .with_ansi(false);
+            if mirror_stderr {
+                Registry::default()
+                    .with(env_filter)
+                    .with(file_layer)
+                    .with(
+                        fmt::layer()
+                            .with_timer(timer)
+                            .with_writer(std::io::stderr)
+                            .with_ansi(true),
+                    )
+                    .init();
+            } else {
+                Registry::default()
+                    .with(env_filter)
+                    .with(file_layer)
+                    .init();
+            }
+            return Ok(Some(log_guard));
+        }
+        Err(e) => {
+            eprintln!(
+                "日志文件初始化失败，退回到标准错误输出\n  path: {}\n  error: {e}",
+                log_filename.display()
+            );
+            Registry::default()
+                .with(env_filter)
+                .with(
+                    fmt::layer()
+                        .with_timer(timer)
+                        .with_writer(std::io::stderr)
+                        .with_ansi(true),
+                )
+                .init();
+            return Ok(None);
+        }
     }
+}
+
+fn main() -> Result<()> {
+    init_env();
+    let _log_guard = init_logging()?;
 
     let args = rs_admin::CliArgs::parse();
-    rs_admin::run(args).await
+
+    match args.mode {
+        rs_admin::AppMode::Service(rs_admin::ServiceCommand::Install) => {
+            rs_admin::service::install(&args)?;
+            tracing::info!("Windows Service installed");
+            return Ok(());
+        }
+        rs_admin::AppMode::Service(rs_admin::ServiceCommand::Uninstall) => {
+            rs_admin::service::uninstall()?;
+            tracing::info!("Windows Service uninstalled");
+            return Ok(());
+        }
+        rs_admin::AppMode::Service(rs_admin::ServiceCommand::Start) => {
+            rs_admin::service::start()?;
+            tracing::info!("Windows Service started");
+            return Ok(());
+        }
+        rs_admin::AppMode::Service(rs_admin::ServiceCommand::Stop) => {
+            rs_admin::service::stop()?;
+            tracing::info!("Windows Service stopped");
+            return Ok(());
+        }
+        rs_admin::AppMode::Run => {}
+    }
+
+    if rs_admin::service::try_run_dispatcher()? {
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("创建 Tokio runtime 失败")?;
+    rt.block_on(rs_admin::run(args))
 }

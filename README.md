@@ -43,10 +43,10 @@ STATIC_DIR=web/dist
 
 说明：
 
-- `DATABASE_URL`：SQLite 数据库路径。默认是当前目录下的 `rs-admin.db`，对应 `sqlite:./rs-admin.db`。
+- `DATABASE_URL`：SQLite 数据库路径。默认是应用目录下的 `rs-admin.db`；开发时通常是项目根目录，安装成服务后会回落到 exe 目录。
 - `LISTEN`：后端监听地址，默认 `0.0.0.0:8080`。
 - `JWT_SECRET`：登录 token 签名密钥，个人本地用默认值也可以，部署到机器上建议改掉。
-- `STATIC_DIR`：前端静态文件目录，默认 `web/dist`，相对项目根目录。
+- `STATIC_DIR`：前端静态文件目录，默认 `web/dist`，同样按应用目录解析。
 
 如果使用已有 Go 项目的数据库，只要把 `DATABASE_URL` 指向原来的 `sqlite.db` 即可。当前项目会自动创建 `exec_script` 表，其他表依赖原数据库已有结构。
 
@@ -147,6 +147,56 @@ cargo run
 cargo run -- --database D:\path\to\sqlite.db
 ```
 
+## Windows Service
+
+如果是在 Windows 上长期后台运行，建议直接安装成 Windows Service。
+
+推荐的部署目录结构：
+
+```text
+D:\apps\rs-admin\
+  rs_admin.exe
+  rs-admin.db
+  logs\
+  web\
+    dist\
+```
+
+把 `target\release\rs_admin.exe` 复制到这个目录，再把前端构建产物 `web\dist` 放到 `D:\apps\rs-admin\web\dist`，数据库文件放到 `D:\apps\rs-admin\rs-admin.db`。
+
+先构建 release：
+
+```powershell
+cargo build --release
+```
+
+然后进入部署目录安装服务：
+
+```powershell
+cd D:\apps\rs-admin
+.\rs_admin.exe service install
+```
+
+启动、停止和卸载：
+
+```powershell
+.\rs_admin.exe service start
+.\rs_admin.exe service stop
+.\rs_admin.exe service uninstall
+```
+
+如果安装时带了参数，服务会保留这些参数。例如：
+
+```powershell
+.\rs_admin.exe service install --listen 0.0.0.0:8080 --database D:\apps\rs-admin\rs-admin.db
+```
+
+这套方式下，更新应用的流程就是：
+
+1. 停止服务
+2. 替换 `D:\apps\rs-admin\rs_admin.exe`
+3. 再启动服务
+
 ## 发布二进制
 
 如果不想在部署机器上每次 `cargo run`，可以先构建 release：
@@ -161,7 +211,7 @@ cargo build --release
 .\target\release\rs_admin.exe
 ```
 
-注意：默认 `STATIC_DIR=web/dist` 是相对当前工作目录的路径。因此运行 exe 时建议在项目根目录运行，或者显式设置 `STATIC_DIR`。
+注意：默认 `STATIC_DIR=web/dist` 会按应用目录解析。开发时在项目根目录运行，部署时把 `web/dist` 和 `rs_admin.exe` 放在同一套目录结构下即可。
 
 ## 常用命令
 

@@ -10,8 +10,10 @@ mod router;
 mod schema;
 mod maintenance;
 mod tools_clear_delete;
+pub mod service;
 
 pub use config::CliArgs;
+pub use config::{app_dir, resolve_relative_path, AppMode, ServiceCommand};
 pub use error::AppError;
 
 use anyhow::{Context, Result};
@@ -19,11 +21,11 @@ use axum::http::{header, Method};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,6 +35,17 @@ pub struct AppState {
 }
 
 pub async fn run(args: CliArgs) -> Result<()> {
+    let shutdown = CancellationToken::new();
+    let shutdown_for_ctrl_c = shutdown.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            shutdown_for_ctrl_c.cancel();
+        }
+    });
+    run_with_shutdown(args, shutdown).await
+}
+
+pub async fn run_with_shutdown(args: CliArgs, shutdown: CancellationToken) -> Result<()> {
     let cfg = config::load(&args);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -65,9 +78,10 @@ pub async fn run(args: CliArgs) -> Result<()> {
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    let dist = PathBuf::from(
-        std::env::var("STATIC_DIR").unwrap_or_else(|_| "web/dist".to_string()),
-    );
+    let dist = match std::env::var("STATIC_DIR") {
+        Ok(value) => config::resolve_relative_path(&value),
+        Err(_) => config::resolve_relative_path("web/dist"),
+    };
     let index_html = dist.join("index.html");
     let mut app = router::routes(state);
     if dist.is_dir() && index_html.is_file() {
@@ -86,13 +100,11 @@ pub async fn run(args: CliArgs) -> Result<()> {
     tracing::info!("listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown.cancelled().await;
+            tracing::info!("shutdown");
+        })
         .await?;
 
     Ok(())
-}
-
-async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
-    tracing::info!("shutdown");
 }

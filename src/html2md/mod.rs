@@ -1,11 +1,9 @@
 //! HTML → Markdown，对齐 gin-vue-admin `server/service/tools/html2md_util.go`。
 
-mod convert;
 mod download;
 mod format_tpl;
-mod out_text;
+mod render;
 
-use nipper::Document;
 use serde::Deserialize;
 
 pub use download::markdown_use_local_img;
@@ -56,20 +54,12 @@ impl Default for Html2mdUtil {
 
 impl Html2mdUtil {
     pub fn html_to_md(&self, html: &str) -> anyhow::Result<String> {
-        let mut doc = Document::from(html);
-        convert::convert_figure(&mut doc);
-        convert::convert_br(&mut doc);
-        convert::convert_link(&mut doc);
-        convert::convert_img(&mut doc);
-        convert::convert_htag(&mut doc, &self.title_prefix);
-        convert::convert_btag(&mut doc);
-        convert::convert_code(&mut doc, &self.default_lang);
-        convert::convert_blockquote(&mut doc);
-        convert::convert_ul(&mut doc);
-        convert::convert_table(&mut doc);
-
-        let root = doc.root();
-        let mut text = out_text::out_tag_text(&root, "", true, &self.line_append);
+        let mut text = render::html_fragment_to_md(
+            html,
+            &self.title_prefix,
+            &self.default_lang,
+            &self.line_append,
+        );
         text = text.replace('\u{a0}', "");
         Ok(text)
     }
@@ -130,5 +120,12 @@ mod tests {
         let u = Html2mdUtil::default();
         let r = u.html_to_md("<p>hello</p>").unwrap();
         assert!(r.contains("hello"));
+    }
+
+    #[test]
+    fn html_to_md_list_inline_markdown() {
+        let u = Html2mdUtil::default();
+        let r = u.html_to_md("<ul><li>a <strong>b</strong></li></ul>").unwrap();
+        assert!(r.contains("**b**"));
     }
 }

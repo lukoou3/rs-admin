@@ -8,7 +8,7 @@ const route = useRoute();
   <el-container class="layout">
     <el-aside class="sidebar" width="220px">
       <header class="brand">
-        <div class="brand-title">笔记</div>
+        <div class="brand-title">note</div>
         <div class="brand-sub">rs-admin</div>
       </header>
       <el-menu
@@ -21,7 +21,7 @@ const route = useRoute();
           <template #title>
             <span class="submenu-title">代码</span>
           </template>
-          <el-menu-item index="/shell">Shell</el-menu-item>
+          <el-menu-item index="/shell">命令</el-menu-item>
           <el-menu-item index="/exec-script">执行脚本</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="sql">

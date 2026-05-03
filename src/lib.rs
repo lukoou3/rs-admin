@@ -41,12 +41,9 @@ pub async fn run(args: CliArgs) -> Result<()> {
         .await
         .with_context(|| format!("打开数据库 {}", cfg.database_url))?;
 
-    schema::ensure_exec_script_table(&pool)
+    schema::ensure_all_tables(&pool)
         .await
-        .with_context(|| "初始化 exec_script 表失败")?;
-    schema::ensure_sys_operation_records_table(&pool)
-        .await
-        .with_context(|| "初始化 sys_operation_records 表失败")?;
+        .with_context(|| "初始化数据库表失败")?;
 
     maintenance::run_startup_maintenance(&pool, &cfg.maintenance).await;
     maintenance::spawn_scheduled_maintenance(pool.clone(), cfg.maintenance);

@@ -6,7 +6,7 @@ const route = useRoute();
 
 <template>
   <el-container class="layout">
-    <el-aside class="sidebar" width="220px">
+    <el-aside class="sidebar" width="232px">
       <header class="brand">
         <div class="brand-title">note</div>
         <div class="brand-sub">rs-admin</div>
@@ -59,48 +59,45 @@ const route = useRoute();
 <style scoped>
 .layout {
   min-height: 100%;
-  background: var(--el-bg-color-page);
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f4f6 100%);
 }
 .sidebar {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  background: var(--el-fill-color-blank);
-  border-right: 1px solid var(--el-border-color-lighter);
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.04);
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+  border-right: 1px solid #d7dde7;
+  box-shadow: 6px 0 22px rgba(15, 23, 42, 0.06);
+  position: relative;
+  z-index: 1;
 }
 .brand {
   flex-shrink: 0;
-  padding: 22px 20px 20px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: linear-gradient(
-    165deg,
-    var(--el-fill-color-light) 0%,
-    var(--el-fill-color-blank) 100%
-  );
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.9) 0%, rgba(241, 245, 249, 0.92) 100%);
 }
 .brand-title {
   font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-primary);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #0f172a;
   line-height: 1.3;
 }
 .brand-sub {
   margin-top: 6px;
   font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-  opacity: 0.9;
+  letter-spacing: 0.02em;
+  color: #64748b;
 }
 .sidebar-menu {
   flex: 1;
   border-right: none !important;
   padding: 12px 10px 20px;
   --el-menu-bg-color: transparent;
-  --el-menu-hover-bg-color: var(--el-fill-color-light);
-  --el-menu-active-color: var(--el-color-primary);
+  --el-menu-hover-bg-color: rgba(59, 130, 246, 0.08);
+  --el-menu-active-color: #1d4ed8;
 }
 .sidebar-menu.el-menu {
   background-color: transparent !important;
@@ -108,17 +105,24 @@ const route = useRoute();
 .sidebar .submenu-title {
   font-weight: 600;
   font-size: 13px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
+  color: #334155;
 }
 .sidebar :deep(.el-sub-menu__title) {
-  border-radius: 8px;
-  margin: 3px 0;
+  border-radius: 10px;
+  margin: 4px 0;
   height: 42px;
+  color: #334155;
+  font-weight: 600;
+}
+.sidebar :deep(.el-sub-menu__title:hover) {
+  background-color: rgba(59, 130, 246, 0.08);
 }
 .sidebar :deep(.el-menu-item) {
-  border-radius: 8px;
+  border-radius: 10px;
   margin: 2px 0;
   height: 38px;
+  color: #475569;
 }
 .sidebar :deep(.el-menu--vertical.el-menu) {
   border-right: none;
@@ -128,12 +132,18 @@ const route = useRoute();
   min-width: auto;
 }
 .sidebar :deep(.el-menu-item.is-active) {
-  font-weight: 600;
-  background-color: var(--el-color-primary-light-9) !important;
+  font-weight: 700;
+  color: #1d4ed8 !important;
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  box-shadow: inset 3px 0 0 #1d4ed8;
+}
+.sidebar :deep(.el-menu-item:hover) {
+  color: #1d4ed8;
+  background-color: rgba(59, 130, 246, 0.08);
 }
 .main-area {
   padding: 20px 24px 24px;
-  background: var(--el-bg-color);
+  background: #f8fafc;
   min-width: 0;
 }
 @media (max-width: 768px) {

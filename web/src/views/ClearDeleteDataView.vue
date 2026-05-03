@@ -147,7 +147,7 @@ onMounted(loadTables);
 
 <style scoped>
 .clear-delete-page {
-  max-width: 1100px;
+  width: 100%;
 }
 .page-title {
   margin: 0 0 8px;
@@ -162,6 +162,11 @@ onMounted(loadTables);
 }
 .toolbar-form {
   margin-bottom: 12px;
+  width: 100%;
+}
+.toolbar-form :deep(.el-form-item) {
+  width: 100%;
+  margin-bottom: 0;
 }
 .info-box {
   padding: 12px;
@@ -169,5 +174,11 @@ onMounted(loadTables);
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.clear-delete-page :deep(.el-tabs) {
+  width: 100%;
+}
+.clear-delete-page :deep(.el-table) {
+  width: 100%;
 }
 </style>

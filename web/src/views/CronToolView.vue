@@ -30,7 +30,7 @@ async function onFill(crontabValue: string) {
 
 <style scoped>
 .cron-tool-page {
-  max-width: 960px;
+  width: 100%;
 }
 .page-title {
   margin: 0 0 8px;

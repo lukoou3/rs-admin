@@ -27,6 +27,7 @@ const searchInfo = reactive({
   desc: "",
   status: "" as "" | "true" | "false",
 });
+const multipleSelection = ref<Row[]>([]);
 
 const dialogVisible = ref(false);
 const isCreate = ref(true);
@@ -150,6 +151,35 @@ async function removeRow(row: Row) {
   }
 }
 
+function handleSelectionChange(val: Row[]) {
+  multipleSelection.value = val;
+}
+
+async function batchDelete() {
+  if (!multipleSelection.value.length) {
+    ElMessage.warning("请选择要删除的数据");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${multipleSelection.value.length} 个字典及其全部字典项？`,
+      "确认",
+      { type: "warning" }
+    );
+    const ids = multipleSelection.value.map((r) => r.id);
+    await apiFetch("/api/sys-dictionaries/delete-by-ids", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    ElMessage.success("已删除");
+    multipleSelection.value = [];
+    await load();
+  } catch (e) {
+    if (e === "cancel") return;
+    ElMessage.error(errMsg(e));
+  }
+}
+
 function goDetail(row: Row) {
   router.push({ name: "dictionaryDetail", params: { id: String(row.id) } });
 }
@@ -191,11 +221,22 @@ onMounted(load);
           重置
         </el-button>
         <el-button type="success" @click="openCreate">新增</el-button>
+        <el-button type="danger" :disabled="!multipleSelection.length" @click="batchDelete">
+          删除
+        </el-button>
       </el-form-item>
     </el-form>
   </div>
 
-  <el-table v-loading="loading" :data="rows" stripe border style="width: 100%">
+  <el-table
+    v-loading="loading"
+    :data="rows"
+    stripe
+    border
+    style="width: 100%"
+    @selection-change="handleSelectionChange"
+  >
+    <el-table-column type="selection" width="48" />
     <el-table-column label="日期" width="170">
       <template #default="{ row }">
         {{ formatDate(row.createdAt) }}

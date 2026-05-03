@@ -52,6 +52,7 @@ pub struct ExecScriptListFilter {
     pub name: Option<String>,
     pub cate: Option<i64>,
     pub interpreter: Option<String>,
+    pub content: Option<String>,
     pub desc: Option<String>,
     pub start_created_at: Option<String>,
     pub end_created_at: Option<String>,
@@ -69,6 +70,10 @@ fn push_exec_script_filters(qb: &mut QueryBuilder<'_, Sqlite>, f: &ExecScriptLis
     if let Some(i) = f.interpreter.as_ref().filter(|s| !s.is_empty()) {
         qb.push(" AND interpreter LIKE ");
         qb.push_bind(format!("%{i}%"));
+    }
+    if let Some(c) = f.content.as_ref().filter(|s| !s.is_empty()) {
+        qb.push(" AND content LIKE ");
+        qb.push_bind(format!("%{c}%"));
     }
     if let Some(d) = f.desc.as_ref().filter(|s| !s.is_empty()) {
         qb.push(" AND ");

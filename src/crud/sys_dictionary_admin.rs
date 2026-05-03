@@ -1,7 +1,7 @@
 //! `sys_dictionaries` / `sys_dictionary_details` 管理 CRUD（与 gin-vue-admin 表结构一致）。
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -138,34 +138,28 @@ pub async fn list_headers(
 
     let mut count_b =
         sqlx::QueryBuilder::new("SELECT COUNT(*) FROM sys_dictionaries WHERE deleted_at IS NULL");
-    push_filters(
-        &mut count_b,
-        name,
-        dict_type,
-        desc,
-        status,
-    );
+    push_filters(&mut count_b, name, dict_type, desc, status);
     let total: i64 = count_b.build_query_scalar().fetch_one(pool).await?;
 
     let mut data_b = sqlx::QueryBuilder::new(
         r#"SELECT id, created_at, name, type, status, "desc" FROM sys_dictionaries WHERE deleted_at IS NULL"#,
     );
-    push_filters(
-        &mut data_b,
-        name,
-        dict_type,
-        desc,
-        status,
-    );
+    push_filters(&mut data_b, name, dict_type, desc, status);
     data_b.push(" ORDER BY id ASC LIMIT ");
     data_b.push_bind(limit);
     data_b.push(" OFFSET ");
     data_b.push_bind(offset);
-    let rows = data_b.build_query_as::<SysDictionaryHeader>().fetch_all(pool).await?;
+    let rows = data_b
+        .build_query_as::<SysDictionaryHeader>()
+        .fetch_all(pool)
+        .await?;
     Ok((rows, total))
 }
 
-pub async fn get_header(pool: &SqlitePool, id: i64) -> Result<Option<SysDictionaryHeader>, sqlx::Error> {
+pub async fn get_header(
+    pool: &SqlitePool,
+    id: i64,
+) -> Result<Option<SysDictionaryHeader>, sqlx::Error> {
     sqlx::query_as::<_, SysDictionaryHeader>(
         r#"SELECT id, created_at, name, type, status, "desc" FROM sys_dictionaries WHERE id = ? AND deleted_at IS NULL"#,
     )
@@ -228,7 +222,10 @@ pub async fn list_details_for_dict(
     Ok((rows, total))
 }
 
-pub async fn create_header(pool: &SqlitePool, body: &SysDictionaryCreate) -> Result<i64, sqlx::Error> {
+pub async fn create_header(
+    pool: &SqlitePool,
+    body: &SysDictionaryCreate,
+) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO sys_dictionaries (name, type, status, "desc", created_at, updated_at)
            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
@@ -262,7 +259,10 @@ pub async fn update_header(
     Ok(r.rows_affected())
 }
 
-pub async fn soft_delete_header_and_details(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error> {
+pub async fn soft_delete_header_and_details(
+    pool: &SqlitePool,
+    id: i64,
+) -> Result<u64, sqlx::Error> {
     let mut ex = pool.begin().await?;
     let r1 = sqlx::query(
         r#"UPDATE sys_dictionary_details SET deleted_at = datetime('now'), updated_at = datetime('now')
@@ -284,7 +284,48 @@ pub async fn soft_delete_header_and_details(pool: &SqlitePool, id: i64) -> Resul
     Ok(r1.rows_affected() + r2.rows_affected())
 }
 
-pub async fn get_detail(pool: &SqlitePool, id: i64) -> Result<Option<SysDictionaryDetailRow>, sqlx::Error> {
+pub async fn soft_delete_headers_and_details(
+    pool: &SqlitePool,
+    ids: &[i64],
+) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let mut ex = pool.begin().await?;
+
+    let mut details_qb = QueryBuilder::<Sqlite>::new(
+        r#"UPDATE sys_dictionary_details
+           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           WHERE deleted_at IS NULL AND sys_dictionary_id IN ("#,
+    );
+    let mut details_sep = details_qb.separated(", ");
+    for id in ids {
+        details_sep.push_bind(*id);
+    }
+    details_qb.push(")");
+    let details_r = details_qb.build().execute(&mut *ex).await?;
+
+    let mut headers_qb = QueryBuilder::<Sqlite>::new(
+        r#"UPDATE sys_dictionaries
+           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           WHERE deleted_at IS NULL AND id IN ("#,
+    );
+    let mut headers_sep = headers_qb.separated(", ");
+    for id in ids {
+        headers_sep.push_bind(*id);
+    }
+    headers_qb.push(")");
+    let headers_r = headers_qb.build().execute(&mut *ex).await?;
+
+    ex.commit().await?;
+    Ok(details_r.rows_affected() + headers_r.rows_affected())
+}
+
+pub async fn get_detail(
+    pool: &SqlitePool,
+    id: i64,
+) -> Result<Option<SysDictionaryDetailRow>, sqlx::Error> {
     sqlx::query_as::<_, SysDictionaryDetailRow>(
         r#"SELECT id, created_at, label, value, status, sort, sys_dictionary_id
            FROM sys_dictionary_details WHERE id = ? AND deleted_at IS NULL"#,
@@ -294,7 +335,10 @@ pub async fn get_detail(pool: &SqlitePool, id: i64) -> Result<Option<SysDictiona
     .await
 }
 
-pub async fn create_detail(pool: &SqlitePool, body: &SysDictionaryDetailUpsert) -> Result<i64, sqlx::Error> {
+pub async fn create_detail(
+    pool: &SqlitePool,
+    body: &SysDictionaryDetailUpsert,
+) -> Result<i64, sqlx::Error> {
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO sys_dictionary_details (label, value, status, sort, sys_dictionary_id, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))

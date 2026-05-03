@@ -22,6 +22,9 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
 const keyword = ref("");
+const codeKeyword = ref("");
+const descKeyword = ref("");
+const multipleSelection = ref<Row[]>([]);
 
 const dialogVisible = ref(false);
 const mode = ref<DialogMode>("create");
@@ -50,6 +53,8 @@ async function load() {
       page_size: String(pageSize.value),
     });
     if (keyword.value.trim()) q.set("keyword", keyword.value.trim());
+    if (codeKeyword.value.trim()) q.set("code", codeKeyword.value.trim());
+    if (descKeyword.value.trim()) q.set("desc", descKeyword.value.trim());
     const data = await apiFetch<PageResult<Row>>(`/api/shellcodes?${q}`);
     rows.value = data.list;
     total.value = data.total;
@@ -147,6 +152,35 @@ async function removeRow(row: Row) {
   }
 }
 
+function handleSelectionChange(val: Row[]) {
+  multipleSelection.value = val;
+}
+
+async function batchDelete() {
+  if (!multipleSelection.value.length) {
+    ElMessage.warning("请选择要删除的数据");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${multipleSelection.value.length} 条数据？`,
+      "确认",
+      { type: "warning" }
+    );
+    const ids = multipleSelection.value.map((r) => r.id);
+    await apiFetch("/api/shellcodes/delete-by-ids", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
+    });
+    ElMessage.success("已删除");
+    multipleSelection.value = [];
+    await load();
+  } catch (e) {
+    if (e === "cancel") return;
+    ElMessage.error(errMsg(e));
+  }
+}
+
 function search() {
   page.value = 1;
   load();
@@ -169,11 +203,35 @@ onMounted(load);
       style="width: 220px"
       @keyup.enter="search"
     />
+    <el-input
+      v-model="codeKeyword"
+      placeholder="按 code 搜索"
+      clearable
+      style="width: 220px"
+      @keyup.enter="search"
+    />
+    <el-input
+      v-model="descKeyword"
+      placeholder="按描述搜索"
+      clearable
+      style="width: 220px"
+      @keyup.enter="search"
+    />
     <el-button type="primary" @click="search">搜索</el-button>
     <el-button type="success" @click="openCreate">新建</el-button>
+    <el-button type="danger" :disabled="!multipleSelection.length" @click="batchDelete">
+      删除
+    </el-button>
   </div>
 
-  <el-table v-loading="loading" :data="rows" stripe style="width: 100%">
+  <el-table
+    v-loading="loading"
+    :data="rows"
+    stripe
+    style="width: 100%"
+    @selection-change="handleSelectionChange"
+  >
+    <el-table-column type="selection" width="48" />
     <el-table-column prop="id" label="ID" width="80" />
     <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
     <el-table-column prop="desc" label="描述" min-width="200" show-overflow-tooltip />

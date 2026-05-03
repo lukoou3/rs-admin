@@ -71,6 +71,8 @@ const pageSize = ref(10);
 const searchName = ref("");
 const searchCate = ref<number | null>(null);
 const searchInterpreter = ref("");
+const searchContent = ref("");
+const searchDesc = ref("");
 
 const dialogVisible = ref(false);
 const mode = ref<DialogMode>("create");
@@ -151,6 +153,12 @@ async function load() {
     if (searchCate.value != null) q.set("cate", String(searchCate.value));
     if (searchInterpreter.value.trim()) {
       q.set("interpreter", searchInterpreter.value.trim());
+    }
+    if (searchContent.value.trim()) {
+      q.set("content", searchContent.value.trim());
+    }
+    if (searchDesc.value.trim()) {
+      q.set("desc", searchDesc.value.trim());
     }
     const data = await apiFetch<PageResult<Row>>(`/api/exec-scripts?${q}`);
     rows.value = data.list;
@@ -491,10 +499,24 @@ load();
         style="width: 140px"
         @keyup.enter="load"
       />
+      <el-input
+        v-model="searchContent"
+        placeholder="内容"
+        clearable
+        style="width: 140px"
+        @keyup.enter="load"
+      />
+      <el-input
+        v-model="searchDesc"
+        placeholder="描述"
+        clearable
+        style="width: 140px"
+        @keyup.enter="load"
+      />
       <el-button type="primary" @click="() => { page = 1; load(); }">
         查询
       </el-button>
-      <el-button @click="searchName = ''; searchCate = null; searchInterpreter = ''; page = 1; load();">
+      <el-button @click="searchName = ''; searchCate = null; searchInterpreter = ''; searchContent = ''; searchDesc = ''; page = 1; load();">
         重置
       </el-button>
       <el-button type="success" @click="openCreate">新增</el-button>

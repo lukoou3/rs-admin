@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
 use serde::Serialize;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,46 +34,45 @@ pub async fn list(
     offset: i64,
     limit: i64,
     keyword: Option<&str>,
+    sql: Option<&str>,
+    desc: Option<&str>,
 ) -> Result<(Vec<QuerySql>, i64), sqlx::Error> {
-    let (rows, total) = if let Some(k) = keyword.filter(|s| !s.is_empty()) {
-        let pat = format!("%{k}%");
-        let total: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM sql_querysql WHERE deleted_at IS NULL AND name LIKE ?",
-        )
-        .bind(&pat)
-        .fetch_one(pool)
-        .await?;
+    fn push_filters(
+        qb: &mut QueryBuilder<'_, Sqlite>,
+        keyword: Option<&str>,
+        sql: Option<&str>,
+        desc: Option<&str>,
+    ) {
+        if let Some(k) = keyword.filter(|s| !s.is_empty()) {
+            qb.push(" AND name LIKE ");
+            qb.push_bind(format!("%{k}%"));
+        }
+        if let Some(s) = sql.filter(|s| !s.is_empty()) {
+            qb.push(" AND sql LIKE ");
+            qb.push_bind(format!("%{s}%"));
+        }
+        if let Some(d) = desc.filter(|s| !s.is_empty()) {
+            qb.push(r#" AND "desc" LIKE "#);
+            qb.push_bind(format!("%{d}%"));
+        }
+    }
 
-        let rows = sqlx::query_as::<_, QuerySql>(
-            r#"SELECT id, created_at, updated_at, name, cate, sql AS sql_body, "desc" AS note_desc
-               FROM sql_querysql
-               WHERE deleted_at IS NULL AND name LIKE ?
-               ORDER BY id ASC LIMIT ? OFFSET ?"#,
-        )
-        .bind(&pat)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-        (rows, total)
-    } else {
-        let total: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM sql_querysql WHERE deleted_at IS NULL")
-                .fetch_one(pool)
-                .await?;
+    let mut count_qb =
+        QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM sql_querysql WHERE deleted_at IS NULL");
+    push_filters(&mut count_qb, keyword, sql, desc);
+    let total: i64 = count_qb.build_query_scalar().fetch_one(pool).await?;
 
-        let rows = sqlx::query_as::<_, QuerySql>(
-            r#"SELECT id, created_at, updated_at, name, cate, sql AS sql_body, "desc" AS note_desc
-               FROM sql_querysql
-               WHERE deleted_at IS NULL
-               ORDER BY id ASC LIMIT ? OFFSET ?"#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(pool)
-        .await?;
-        (rows, total)
-    };
+    let mut data_qb = QueryBuilder::<Sqlite>::new(
+        r#"SELECT id, created_at, updated_at, name, cate, sql AS sql_body, "desc" AS note_desc
+           FROM sql_querysql
+           WHERE deleted_at IS NULL"#,
+    );
+    push_filters(&mut data_qb, keyword, sql, desc);
+    data_qb.push(" ORDER BY id ASC LIMIT ");
+    data_qb.push_bind(limit);
+    data_qb.push(" OFFSET ");
+    data_qb.push_bind(offset);
+    let rows = data_qb.build_query_as::<QuerySql>().fetch_all(pool).await?;
 
     Ok((rows, total))
 }
@@ -129,5 +128,23 @@ pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<u64, sqlx::Error>
     .bind(id)
     .execute(pool)
     .await?;
+    Ok(r.rows_affected())
+}
+
+pub async fn soft_delete_ids(pool: &SqlitePool, ids: &[i64]) -> Result<u64, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let mut qb = QueryBuilder::<Sqlite>::new(
+        r#"UPDATE sql_querysql
+           SET deleted_at = datetime('now'), updated_at = datetime('now')
+           WHERE deleted_at IS NULL AND id IN ("#,
+    );
+    let mut sep = qb.separated(", ");
+    for id in ids {
+        sep.push_bind(*id);
+    }
+    qb.push(")");
+    let r = qb.build().execute(pool).await?;
     Ok(r.rows_affected())
 }

@@ -1,14 +1,14 @@
+use crate::AppState;
 use crate::auth;
 use crate::crud::{
     datasource, dictionary, exec_script, operation_record, querysql, shellcode,
     sys_dictionary_admin, sys_users,
 };
-use crate::html2md;
-use crate::tools_clear_delete;
 use crate::error::{AppError, AppResult};
 use crate::exec_script_engine::{ExecScriptRunBody, RunInfoResponse};
+use crate::html2md;
 use crate::list_params::ListParams;
-use crate::AppState;
+use crate::tools_clear_delete;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::middleware;
@@ -32,6 +32,7 @@ pub fn routes(state: AppState) -> Router {
             "/shellcodes",
             Router::new()
                 .route("/", get(shellcode_list).post(shellcode_create))
+                .route("/delete-by-ids", post(shellcode_delete_by_ids))
                 .route(
                     "/{id}",
                     get(shellcode_get)
@@ -43,6 +44,7 @@ pub fn routes(state: AppState) -> Router {
             "/sql-datasources",
             Router::new()
                 .route("/", get(datasource_list).post(datasource_create))
+                .route("/delete-by-ids", post(datasource_delete_by_ids))
                 .route(
                     "/{id}",
                     get(datasource_get)
@@ -54,6 +56,7 @@ pub fn routes(state: AppState) -> Router {
             "/sql-queries",
             Router::new()
                 .route("/", get(querysql_list).post(querysql_create))
+                .route("/delete-by-ids", post(querysql_delete_by_ids))
                 .route(
                     "/{id}",
                     get(querysql_get)
@@ -100,9 +103,7 @@ fn users_routes() -> Router<AppState> {
         .route("/{id}/password", put(users_reset_password))
         .route(
             "/{id}",
-            get(users_get)
-                .put(users_update)
-                .delete(users_delete),
+            get(users_get).put(users_update).delete(users_delete),
         )
 }
 
@@ -112,6 +113,7 @@ fn sys_dictionaries_routes() -> Router<AppState> {
             "/",
             get(sys_dictionary_admin_list).post(sys_dictionary_admin_create),
         )
+        .route("/delete-by-ids", post(sys_dictionary_admin_delete_by_ids))
         .route(
             "/{id}",
             get(sys_dictionary_admin_get)
@@ -248,10 +250,7 @@ async fn users_update(
     Ok(Json(serde_json::json!({ "id": id })))
 }
 
-async fn users_delete(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> AppResult<StatusCode> {
+async fn users_delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<StatusCode> {
     let n = sys_users::soft_delete(&state.pool, id).await?;
     if n == 0 {
         return Err(AppError::NotFound);
@@ -307,6 +306,10 @@ fn default_ps_10() -> u32 {
     10
 }
 
+fn default_ps_20() -> u32 {
+    20
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SysDictionaryAdminListQuery {
@@ -345,6 +348,39 @@ struct OperationRecordListQuery {
     method: Option<String>,
     path: Option<String>,
     status: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShellcodeListQuery {
+    #[serde(default = "default_page_one")]
+    page: u32,
+    #[serde(default = "default_ps_20")]
+    page_size: u32,
+    keyword: Option<String>,
+    code: Option<String>,
+    desc: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatasourceListQuery {
+    #[serde(default = "default_page_one")]
+    page: u32,
+    #[serde(default = "default_ps_20")]
+    page_size: u32,
+    keyword: Option<String>,
+    sql: Option<String>,
+    desc: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuerySqlListQuery {
+    #[serde(default = "default_page_one")]
+    page: u32,
+    #[serde(default = "default_ps_20")]
+    page_size: u32,
+    keyword: Option<String>,
+    sql: Option<String>,
+    desc: Option<String>,
 }
 
 async fn sys_dictionary_admin_list(
@@ -429,6 +465,17 @@ async fn sys_dictionary_admin_delete(
     if n == 0 {
         return Err(AppError::NotFound);
     }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn sys_dictionary_admin_delete_by_ids(
+    State(state): State<AppState>,
+    Json(body): Json<IdsBody>,
+) -> AppResult<StatusCode> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids 不能为空".into()));
+    }
+    sys_dictionary_admin::soft_delete_headers_and_details(&state.pool, &body.ids).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -560,15 +607,26 @@ async fn operation_record_delete_by_ids(
 
 async fn shellcode_list(
     State(state): State<AppState>,
-    Query(params): Query<ListParams>,
+    Query(q): Query<ShellcodeListQuery>,
 ) -> AppResult<Json<PageResp<shellcode::Shellcode>>> {
-    let (offset, limit) = params.offset_limit();
-    let (list, total) = shellcode::list(&state.pool, offset, limit, params.keyword.as_deref()).await?;
+    let page = q.page.max(1);
+    let page_size = q.page_size.clamp(1, 200);
+    let offset = ((page - 1) * page_size) as i64;
+    let limit = page_size as i64;
+    let (list, total) = shellcode::list(
+        &state.pool,
+        offset,
+        limit,
+        q.keyword.as_deref(),
+        q.code.as_deref(),
+        q.desc.as_deref(),
+    )
+    .await?;
     Ok(Json(PageResp {
         list,
         total,
-        page: params.page.max(1),
-        page_size: params.page_size.clamp(1, 200),
+        page,
+        page_size,
     }))
 }
 
@@ -619,18 +677,39 @@ async fn shellcode_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn shellcode_delete_by_ids(
+    State(state): State<AppState>,
+    Json(body): Json<IdsBody>,
+) -> AppResult<StatusCode> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids 不能为空".into()));
+    }
+    shellcode::soft_delete_ids(&state.pool, &body.ids).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn datasource_list(
     State(state): State<AppState>,
-    Query(params): Query<ListParams>,
+    Query(q): Query<DatasourceListQuery>,
 ) -> AppResult<Json<PageResp<datasource::Datasource>>> {
-    let (offset, limit) = params.offset_limit();
-    let (list, total) =
-        datasource::list(&state.pool, offset, limit, params.keyword.as_deref()).await?;
+    let page = q.page.max(1);
+    let page_size = q.page_size.clamp(1, 200);
+    let offset = ((page - 1) * page_size) as i64;
+    let limit = page_size as i64;
+    let (list, total) = datasource::list(
+        &state.pool,
+        offset,
+        limit,
+        q.keyword.as_deref(),
+        q.sql.as_deref(),
+        q.desc.as_deref(),
+    )
+    .await?;
     Ok(Json(PageResp {
         list,
         total,
-        page: params.page.max(1),
-        page_size: params.page_size.clamp(1, 200),
+        page,
+        page_size,
     }))
 }
 
@@ -681,17 +760,39 @@ async fn datasource_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn datasource_delete_by_ids(
+    State(state): State<AppState>,
+    Json(body): Json<IdsBody>,
+) -> AppResult<StatusCode> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids 不能为空".into()));
+    }
+    datasource::soft_delete_ids(&state.pool, &body.ids).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn querysql_list(
     State(state): State<AppState>,
-    Query(params): Query<ListParams>,
+    Query(q): Query<QuerySqlListQuery>,
 ) -> AppResult<Json<PageResp<querysql::QuerySql>>> {
-    let (offset, limit) = params.offset_limit();
-    let (list, total) = querysql::list(&state.pool, offset, limit, params.keyword.as_deref()).await?;
+    let page = q.page.max(1);
+    let page_size = q.page_size.clamp(1, 200);
+    let offset = ((page - 1) * page_size) as i64;
+    let limit = page_size as i64;
+    let (list, total) = querysql::list(
+        &state.pool,
+        offset,
+        limit,
+        q.keyword.as_deref(),
+        q.sql.as_deref(),
+        q.desc.as_deref(),
+    )
+    .await?;
     Ok(Json(PageResp {
         list,
         total,
-        page: params.page.max(1),
-        page_size: params.page_size.clamp(1, 200),
+        page,
+        page_size,
     }))
 }
 
@@ -742,6 +843,17 @@ async fn querysql_delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn querysql_delete_by_ids(
+    State(state): State<AppState>,
+    Json(body): Json<IdsBody>,
+) -> AppResult<StatusCode> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids 不能为空".into()));
+    }
+    querysql::soft_delete_ids(&state.pool, &body.ids).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn default_page_es() -> u32 {
     1
 }
@@ -760,6 +872,7 @@ struct ExecScriptListQuery {
     name: Option<String>,
     cate: Option<i64>,
     interpreter: Option<String>,
+    content: Option<String>,
     desc: Option<String>,
     start_created_at: Option<String>,
     end_created_at: Option<String>,
@@ -817,6 +930,7 @@ async fn exec_script_list(
         name: q.name,
         cate: q.cate,
         interpreter: q.interpreter,
+        content: q.content,
         desc: q.desc,
         start_created_at: q.start_created_at,
         end_created_at: q.end_created_at,

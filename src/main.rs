@@ -10,5 +10,6 @@ async fn main() -> Result<()> {
         .init();
 
     dotenvy::dotenv().ok();
-    rs_admin::run().await
+    let args = rs_admin::CliArgs::parse();
+    rs_admin::run(args).await
 }

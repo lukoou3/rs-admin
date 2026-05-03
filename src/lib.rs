@@ -9,6 +9,7 @@ mod router;
 mod schema;
 mod tools_clear_delete;
 
+pub use config::CliArgs;
 pub use error::AppError;
 
 use anyhow::{Context, Result};
@@ -29,8 +30,8 @@ pub struct AppState {
     pub jwt_secret: std::sync::Arc<String>,
 }
 
-pub async fn run() -> Result<()> {
-    let cfg = config::load();
+pub async fn run(args: CliArgs) -> Result<()> {
+    let cfg = config::load(&args);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .acquire_timeout(Duration::from_secs(10))

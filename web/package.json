@@ -17,9 +17,11 @@
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.4",
     "@lezer/highlight": "^1.2.1",
+    "@types/markdown-it": "^14.1.2",
     "@uiw/codemirror-theme-dracula": "^4.25.9",
     "codemirror": "^6.0.1",
     "element-plus": "^2.9.4",
+    "markdown-it": "^14.1.1",
     "nearley": "^2.20.1",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"

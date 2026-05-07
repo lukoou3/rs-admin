@@ -17,7 +17,7 @@ pub use config::{app_dir, resolve_relative_path, AppMode, ServiceCommand};
 pub use error::AppError;
 
 use anyhow::{Context, Result};
-use axum::http::{header, Method};
+use axum::http::{header, HeaderName, Method};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -76,7 +76,11 @@ pub async fn run_with_shutdown(args: CliArgs, shutdown: CancellationToken) -> Re
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
+        .expose_headers([
+            HeaderName::from_static("new-token"),
+            HeaderName::from_static("new-expires-at"),
+        ]);
 
     let dist = match std::env::var("STATIC_DIR") {
         Ok(value) => config::resolve_relative_path(&value),

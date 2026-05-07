@@ -1,12 +1,12 @@
 const TOKEN_KEY = "rs-admin-token";
 
 export function getToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token: string | null) {
-  if (token) sessionStorage.setItem(TOKEN_KEY, token);
-  else sessionStorage.removeItem(TOKEN_KEY);
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export class ApiError extends Error {
@@ -45,6 +45,9 @@ export async function apiFetch<T>(
     ...init,
     headers,
   });
+  const newToken = res.headers.get("new-token");
+  if (newToken) setToken(newToken);
+
   if (res.status === 204) return undefined as T;
   const data = await parseJson(res);
   if (res.status === 401 && !path.includes("/api/auth/login")) {

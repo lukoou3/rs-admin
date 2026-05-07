@@ -3,7 +3,7 @@ use crate::error::AppError;
 use crate::AppState;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, Request};
+use axum::http::{header, HeaderValue, Request};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
@@ -18,6 +18,7 @@ pub struct Claims {
 }
 
 pub const JWT_TTL_SECS: i64 = 7 * 24 * 3600;
+pub const JWT_REFRESH_BUFFER_SECS: i64 = 24 * 3600;
 
 pub fn sign_jwt(user_id: i64, username: &str, secret: &str) -> Result<(String, i64), AppError> {
     let now = chrono::Utc::now().timestamp();
@@ -50,6 +51,21 @@ pub fn verify_jwt(token: &str, secret: &str) -> Result<Claims, AppError> {
     .map_err(|_| AppError::Unauthorized("令牌无效或已过期".into()))
 }
 
+fn refresh_jwt_if_needed(claims: &Claims, secret: &str) -> Option<(String, i64)> {
+    let now = chrono::Utc::now().timestamp();
+    if claims.exp - now >= JWT_REFRESH_BUFFER_SECS {
+        return None;
+    }
+    let user_id = claims.sub.parse::<i64>().ok()?;
+    match sign_jwt(user_id, &claims.username, secret) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            tracing::warn!(error = %e, "refresh jwt failed");
+            None
+        }
+    }
+}
+
 pub async fn auth_middleware(
     State(state): State<AppState>,
     mut req: Request<Body>,
@@ -67,8 +83,18 @@ pub async fn auth_middleware(
 
     match verify_jwt(t, state.jwt_secret.as_ref()) {
         Ok(claims) => {
+            let refreshed = refresh_jwt_if_needed(&claims, state.jwt_secret.as_ref());
             req.extensions_mut().insert(claims);
-            next.run(req).await
+            let mut resp = next.run(req).await;
+            if let Some((new_token, new_expires_at)) = refreshed {
+                if let Ok(v) = HeaderValue::from_str(&new_token) {
+                    resp.headers_mut().insert("new-token", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&new_expires_at.to_string()) {
+                    resp.headers_mut().insert("new-expires-at", v);
+                }
+            }
+            resp
         }
         Err(e) => e.into_response(),
     }

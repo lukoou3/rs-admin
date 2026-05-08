@@ -60,10 +60,15 @@ pub enum AppMode {
 pub struct CliArgs {
     pub listen: Option<String>,
     pub database: Option<String>,
+    pub worker_threads: usize,
+    pub thread_stack_size: usize,
     pub mode: AppMode,
 }
 
 impl CliArgs {
+    pub const DEFAULT_WORKER_THREADS: usize = 4;
+    pub const DEFAULT_THREAD_STACK_SIZE: usize = 1024 * 1024;
+
     pub fn parse() -> Self {
         Self::parse_from(env::args_os().skip(1))
     }
@@ -74,6 +79,8 @@ impl CliArgs {
     {
         let mut listen = None;
         let mut database = None;
+        let mut worker_threads = Self::DEFAULT_WORKER_THREADS;
+        let mut thread_stack_size = Self::DEFAULT_THREAD_STACK_SIZE;
 
         let mut mode = AppMode::Run;
         let mut it = args.into_iter();
@@ -88,6 +95,20 @@ impl CliArgs {
                 "--database" | "--db" | "-d" => {
                     if let Some(v) = it.next() {
                         database = Some(v.to_string_lossy().to_string());
+                    }
+                }
+                "--worker-threads" | "--threads" => {
+                    if let Some(v) = it.next() {
+                        if let Ok(n) = v.to_string_lossy().parse::<usize>() {
+                            worker_threads = n.max(1);
+                        }
+                    }
+                }
+                "--thread-stack-size" | "--stack-size" => {
+                    if let Some(v) = it.next() {
+                        if let Some(n) = parse_size(&v.to_string_lossy()) {
+                            thread_stack_size = n.clamp(64 * 1024, 16 * 1024 * 1024);
+                        }
                     }
                 }
                 "service" => {
@@ -107,6 +128,8 @@ impl CliArgs {
         Self {
             listen,
             database,
+            worker_threads,
+            thread_stack_size,
             mode,
         }
     }
@@ -121,8 +144,32 @@ impl CliArgs {
             args.push(OsString::from("--database"));
             args.push(OsString::from(database));
         }
+        args.push(OsString::from("--worker-threads"));
+        args.push(OsString::from(self.worker_threads.to_string()));
+        args.push(OsString::from("--thread-stack-size"));
+        args.push(OsString::from(self.thread_stack_size.to_string()));
         args
     }
+}
+
+fn parse_size(raw: &str) -> Option<usize> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let split_at = trimmed
+        .find(|ch: char| !ch.is_ascii_digit())
+        .unwrap_or(trimmed.len());
+    let (num, unit) = trimmed.split_at(split_at);
+    let n = num.parse::<usize>().ok()?;
+    let multiplier = match unit.trim().to_ascii_lowercase().as_str() {
+        "" | "b" => 1,
+        "k" | "kb" | "kib" => 1024,
+        "m" | "mb" | "mib" => 1024 * 1024,
+        _ => return None,
+    };
+    n.checked_mul(multiplier)
 }
 
 pub fn app_dir() -> PathBuf {

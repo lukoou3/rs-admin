@@ -60,6 +60,15 @@ cargo run -- --listen 0.0.0.0:8080 --database ./rs-admin.db
 
 - `--listen` 或 `-l`
 - `--database`、`--db` 或 `-d`
+- `--worker-threads` 或 `--threads`：Tokio worker 线程数，默认 `4`，最小值 `1`。
+- `--thread-stack-size` 或 `--stack-size`：Tokio worker 线程栈大小，默认 `1m`，支持纯字节数、`k/kb/kib`、`m/mb/mib`，范围 `64k` 到 `16m`。
+
+例如测试不同线程和栈配置：
+
+```powershell
+cargo run --release -- --worker-threads 4 --thread-stack-size 1m
+cargo run --release -- --threads 8 --stack-size 512k
+```
 
 ## 开发
 

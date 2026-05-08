@@ -139,8 +139,15 @@ fn main() -> Result<()> {
     }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(args.worker_threads)
+        .thread_stack_size(args.thread_stack_size)
         .enable_all()
         .build()
         .context("创建 Tokio runtime 失败")?;
+    tracing::info!(
+        worker_threads = args.worker_threads,
+        thread_stack_size = args.thread_stack_size,
+        "Tokio runtime configured"
+    );
     rt.block_on(rs_admin::run(args))
 }

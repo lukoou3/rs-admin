@@ -24,6 +24,10 @@ const router = createRouter({
           path: "exec-script",
           component: () => import("@/views/ExecScriptView.vue"),
         },
+        {
+          path: "code-template",
+          component: () => import("@/views/CodeTemplateView.vue"),
+        },
         { path: "script", redirect: "/exec-script" },
         {
           path: "datasource",

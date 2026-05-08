@@ -22,6 +22,7 @@ const route = useRoute();
             <span class="submenu-title">代码</span>
           </template>
           <el-menu-item index="/shell">命令</el-menu-item>
+          <el-menu-item index="/code-template">模板</el-menu-item>
           <el-menu-item index="/exec-script">执行脚本</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="sql">

@@ -1,7 +1,7 @@
 use crate::AppState;
 use crate::auth;
 use crate::crud::{
-    datasource, dictionary, exec_script, operation_record, querysql, shellcode,
+    code_template, datasource, dictionary, exec_script, operation_record, querysql, shellcode,
     sys_dictionary_admin, sys_users,
 };
 use crate::error::{AppError, AppResult};
@@ -77,6 +77,19 @@ pub fn routes(state: AppState) -> Router {
                     get(exec_script_get)
                         .put(exec_script_update)
                         .delete(exec_script_delete),
+                ),
+        )
+        .nest(
+            "/code-templates",
+            Router::new()
+                .route("/", get(code_template_list).post(code_template_create))
+                .route("/render", post(code_template_render))
+                .route("/delete-by-ids", post(code_template_delete_by_ids))
+                .route(
+                    "/{id}",
+                    get(code_template_get)
+                        .put(code_template_update)
+                        .delete(code_template_delete),
                 ),
         )
         .nest("/users", users_routes())
@@ -385,6 +398,22 @@ struct QuerySqlListQuery {
     keyword: Option<String>,
     sql: Option<String>,
     desc: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeTemplateListQuery {
+    #[serde(default = "default_page_one")]
+    page: u32,
+    #[serde(default = "default_ps_20", rename = "pageSize")]
+    page_size: u32,
+    name: Option<String>,
+    engine: Option<i64>,
+    cate: Option<i64>,
+    temp: Option<String>,
+    desc: Option<String>,
+    start_created_at: Option<String>,
+    end_created_at: Option<String>,
 }
 
 async fn sys_dictionary_admin_list(
@@ -856,6 +885,185 @@ async fn querysql_delete_by_ids(
     }
     querysql::soft_delete_ids(&state.pool, &body.ids).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn code_template_list(
+    State(state): State<AppState>,
+    Query(q): Query<CodeTemplateListQuery>,
+) -> AppResult<Json<PageResp<code_template::CodeTemplate>>> {
+    let page = q.page.max(1);
+    let page_size = q.page_size.clamp(1, 200);
+    let offset = ((page - 1) * page_size) as i64;
+    let limit = page_size as i64;
+    let filter = code_template::CodeTemplateListFilter {
+        name: q.name,
+        engine: q.engine,
+        cate: q.cate,
+        temp: q.temp,
+        desc: q.desc,
+        start_created_at: q.start_created_at,
+        end_created_at: q.end_created_at,
+    };
+    let (list, total) = code_template::list(&state.pool, offset, limit, &filter).await?;
+    Ok(Json(PageResp {
+        list,
+        total,
+        page,
+        page_size,
+    }))
+}
+
+async fn code_template_get(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<code_template::CodeTemplate>> {
+    let row = code_template::get_by_id(&state.pool, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(row))
+}
+
+fn validate_code_template_upsert(body: &code_template::CodeTemplateUpsert) -> AppResult<()> {
+    if body.name.trim().is_empty() {
+        return Err(AppError::BadRequest("name 不能为空".into()));
+    }
+    if body.engine.is_none() {
+        return Err(AppError::BadRequest("engine 不能为空".into()));
+    }
+    if body.cate.is_none() {
+        return Err(AppError::BadRequest("cate 不能为空".into()));
+    }
+    serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&body.default_params)
+        .map_err(|_| AppError::BadRequest("defaultParams 必须是合法 JSON 对象".into()))?;
+    if body.temp.trim().is_empty() {
+        return Err(AppError::BadRequest("temp 不能为空".into()));
+    }
+    Ok(())
+}
+
+async fn code_template_create(
+    State(state): State<AppState>,
+    Json(body): Json<code_template::CodeTemplateUpsert>,
+) -> AppResult<Json<serde_json::Value>> {
+    validate_code_template_upsert(&body)?;
+    let id = code_template::create(&state.pool, &body).await?;
+    Ok(Json(serde_json::json!({ "id": id })))
+}
+
+async fn code_template_update(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<code_template::CodeTemplateUpsert>,
+) -> AppResult<Json<serde_json::Value>> {
+    validate_code_template_upsert(&body)?;
+    let n = code_template::update(&state.pool, id, &body).await?;
+    if n == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(Json(serde_json::json!({ "id": id })))
+}
+
+async fn code_template_delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let n = code_template::soft_delete(&state.pool, id).await?;
+    if n == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn code_template_delete_by_ids(
+    State(state): State<AppState>,
+    Json(body): Json<IdsBody>,
+) -> AppResult<StatusCode> {
+    if body.ids.is_empty() {
+        return Err(AppError::BadRequest("ids 不能为空".into()));
+    }
+    code_template::soft_delete_ids(&state.pool, &body.ids).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeTemplateRenderBody {
+    engine: Option<i64>,
+    params: String,
+    temp: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodeTemplateRenderResp {
+    rst: String,
+}
+
+fn render_minijinja_template(temp: &str, params: &str) -> AppResult<String> {
+    let data: serde_json::Value = serde_json::from_str(params)
+        .map_err(|e| AppError::BadRequest(format!("params 必须是合法 JSON: {e}")))?;
+    let mut env = minijinja::Environment::new();
+    env.add_function("current_date", || {
+        chrono::Local::now().format("%Y-%m-%d").to_string()
+    });
+    env.add_function("current_timestamp", || {
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    });
+    let tmpl = env
+        .template_from_str(temp)
+        .map_err(|e| AppError::BadRequest(format!("模板解析失败: {e}")))?;
+    tmpl.render(data)
+        .map_err(|e| AppError::BadRequest(format!("模板渲染失败: {e}")))
+}
+
+static PYFMT_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\{([A-Za-z_][A-Za-z0-9_.-]*)\}").unwrap());
+
+fn json_value_to_pyfmt_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => v.to_string(),
+    }
+}
+
+fn lookup_json_path<'a>(
+    mut cur: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    for part in path.split('.') {
+        cur = cur.get(part)?;
+    }
+    Some(cur)
+}
+
+fn render_pyfmt_template(temp: &str, params: &str) -> AppResult<String> {
+    let data: serde_json::Value = serde_json::from_str(params)
+        .map_err(|e| AppError::BadRequest(format!("params 必须是合法 JSON: {e}")))?;
+    if !data.is_object() {
+        return Err(AppError::BadRequest("params 必须是 JSON 对象".into()));
+    }
+    Ok(PYFMT_RE
+        .replace_all(temp, |caps: &regex::Captures<'_>| {
+            let key = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            lookup_json_path(&data, key)
+                .map(json_value_to_pyfmt_string)
+                .unwrap_or_else(|| caps.get(0).map(|m| m.as_str()).unwrap_or("").to_string())
+        })
+        .into_owned())
+}
+
+async fn code_template_render(
+    Json(body): Json<CodeTemplateRenderBody>,
+) -> AppResult<Json<CodeTemplateRenderResp>> {
+    let rst = if body.engine == Some(2) {
+        render_pyfmt_template(&body.temp, &body.params)?
+    } else {
+        render_minijinja_template(&body.temp, &body.params)?
+    };
+    Ok(Json(CodeTemplateRenderResp { rst }))
 }
 
 fn default_page_es() -> u32 {

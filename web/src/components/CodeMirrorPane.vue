@@ -2,6 +2,7 @@
 import { javascript } from "@codemirror/lang-javascript";
 import { sql } from "@codemirror/lang-sql";
 import { StreamLanguage } from "@codemirror/language";
+import { jinja2 } from "@codemirror/legacy-modes/mode/jinja2";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -19,7 +20,7 @@ const props = withDefaults(
   defineProps<{
     modelValue: string;
     /** shell：脚本内容；javascript：默认参数 JSON（对齐 gin execScript 的 codemirror） */
-    language: "sql" | "shell" | "javascript";
+    language: "sql" | "shell" | "javascript" | "jinja2";
     readonly?: boolean;
     /** 与旧 gin-vue-admin 一致，默认 400px */
     height?: string;
@@ -33,6 +34,7 @@ const host = ref<HTMLElement | null>(null);
 const view = shallowRef<EditorView | null>(null);
 
 const shellSupport = StreamLanguage.define(shell);
+const jinja2Support = StreamLanguage.define(jinja2);
 
 function buildExtensions() {
   const lang =
@@ -40,7 +42,9 @@ function buildExtensions() {
       ? sql()
       : props.language === "javascript"
         ? javascript()
-        : shellSupport;
+        : props.language === "jinja2"
+          ? jinja2Support
+          : shellSupport;
   // 与旧 gin-vue-admin format/querySql 一致：`[sql(), dracula]`，此处保留 basicSetup（行号等）
   return [
     basicSetup,

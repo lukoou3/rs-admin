@@ -1,3 +1,4 @@
+pub mod code_template;
 pub mod datasource;
 pub mod dictionary;
 pub mod exec_script;

@@ -15,6 +15,7 @@ use axum::middleware;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use sqlx::{Column, Row};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +97,7 @@ pub fn routes(state: AppState) -> Router {
         .nest("/sys-dictionaries", sys_dictionaries_routes())
         .nest("/sys-dictionary-details", sys_dictionary_details_routes())
         .nest("/operation-records", operation_records_routes())
+        .route("/query-platform/query", post(query_platform_query))
         .route("/tools/html2md", post(tools_html2md))
         .nest("/tools/clear-delete-data", tools_clear_delete::routes())
         .layer(middleware::from_fn_with_state(
@@ -885,6 +887,150 @@ async fn querysql_delete_by_ids(
     }
     querysql::soft_delete_ids(&state.pool, &body.ids).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryPlatformBody {
+    sql: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryPlatformResp {
+    columns: Vec<String>,
+    data: Vec<serde_json::Value>,
+}
+
+fn normalize_query_sql(sql: &str) -> AppResult<String> {
+    let mut s = sql.trim().to_string();
+    while s.ends_with(';') {
+        s.pop();
+        s = s.trim_end().to_string();
+    }
+    if s.is_empty() {
+        return Err(AppError::BadRequest("SQL 不能为空".into()));
+    }
+    if s.contains(';') {
+        return Err(AppError::BadRequest("只允许执行单条查询 SQL".into()));
+    }
+    Ok(s)
+}
+
+fn contains_sql_word(sql: &str, word: &str) -> bool {
+    let lower = sql.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    let target = word.as_bytes();
+    if target.is_empty() || bytes.len() < target.len() {
+        return false;
+    }
+    for i in 0..=bytes.len() - target.len() {
+        if &bytes[i..i + target.len()] != target {
+            continue;
+        }
+        let before = i
+            .checked_sub(1)
+            .and_then(|idx| bytes.get(idx))
+            .copied()
+            .unwrap_or(b' ');
+        let after = bytes.get(i + target.len()).copied().unwrap_or(b' ');
+        let before_word = before.is_ascii_alphanumeric() || before == b'_';
+        let after_word = after.is_ascii_alphanumeric() || after == b'_';
+        if !before_word && !after_word {
+            return true;
+        }
+    }
+    false
+}
+
+fn ensure_readonly_query(sql: &str) -> AppResult<()> {
+    let lower = sql.trim_start().to_ascii_lowercase();
+    let allowed_head = lower.starts_with("select ")
+        || lower.starts_with("with ")
+        || lower.starts_with("explain ")
+        || lower.starts_with("pragma table_info")
+        || lower.starts_with("pragma table_list")
+        || lower.starts_with("pragma database_list")
+        || lower.starts_with("pragma index_list")
+        || lower.starts_with("pragma index_info");
+    if !allowed_head {
+        return Err(AppError::BadRequest(
+            "只允许 SELECT / WITH / EXPLAIN / 部分只读 PRAGMA".into(),
+        ));
+    }
+    for word in [
+        "insert", "update", "delete", "drop", "alter", "create", "replace", "vacuum", "attach",
+        "detach",
+    ] {
+        if contains_sql_word(sql, word) {
+            return Err(AppError::BadRequest("只允许查询，禁止修改数据库".into()));
+        }
+    }
+    Ok(())
+}
+
+fn sqlite_cell_to_json(row: &sqlx::sqlite::SqliteRow, i: usize) -> serde_json::Value {
+    use serde_json::{Value, json};
+    if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
+        return v.map_or(Value::Null, |n| json!(n));
+    }
+    if let Ok(v) = row.try_get::<Option<f64>, _>(i) {
+        return match v {
+            Some(f) => serde_json::Number::from_f64(f)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            None => Value::Null,
+        };
+    }
+    if let Ok(v) = row.try_get::<Option<String>, _>(i) {
+        return v.map_or(Value::Null, |s| json!(s));
+    }
+    if let Ok(v) = row.try_get::<Option<Vec<u8>>, _>(i) {
+        return match v {
+            Some(b) if !b.is_empty() => json!(format!("<binary {} bytes>", b.len())),
+            _ => Value::Null,
+        };
+    }
+    Value::Null
+}
+
+async fn query_platform_query(
+    State(state): State<AppState>,
+    Json(body): Json<QueryPlatformBody>,
+) -> AppResult<Json<QueryPlatformResp>> {
+    let sql = normalize_query_sql(&body.sql)?;
+    ensure_readonly_query(&sql)?;
+
+    let lower = sql.trim_start().to_ascii_lowercase();
+    let executable_sql = if lower.starts_with("pragma ") || lower.starts_with("explain ") {
+        sql
+    } else {
+        format!("SELECT * FROM ({sql}) LIMIT 100")
+    };
+
+    let rows = sqlx::query(&executable_sql).fetch_all(&state.pool).await?;
+    let columns = rows
+        .first()
+        .map(|row| {
+            row.columns()
+                .iter()
+                .map(|c| c.name().to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let data = rows
+        .iter()
+        .map(|row| {
+            let mut map = serde_json::Map::new();
+            for i in 0..row.len() {
+                let key = row.column(i).name().to_string();
+                map.insert(key, sqlite_cell_to_json(row, i));
+            }
+            serde_json::Value::Object(map)
+        })
+        .collect();
+
+    Ok(Json(QueryPlatformResp { columns, data }))
 }
 
 async fn code_template_list(

@@ -42,6 +42,10 @@ const router = createRouter({
           component: () => import("@/views/SqlFormatView.vue"),
         },
         {
+          path: "query-platform",
+          component: () => import("@/views/QueryPlatformView.vue"),
+        },
+        {
           path: "tools/cron",
           component: () => import("@/views/CronToolView.vue"),
         },

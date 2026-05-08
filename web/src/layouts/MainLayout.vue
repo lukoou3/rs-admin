@@ -32,6 +32,7 @@ const route = useRoute();
           <el-menu-item index="/datasource">数据源</el-menu-item>
           <el-menu-item index="/query">SQL 查询</el-menu-item>
           <el-menu-item index="/sql-format">SQL 格式化</el-menu-item>
+          <el-menu-item index="/query-platform">查询平台</el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="tools">
           <template #title>

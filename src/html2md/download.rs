@@ -5,8 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-static RE_IMG1: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"!\[\]\((http.*?)\)").unwrap());
+static RE_IMG1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"!\[\]\((http.*?)\)").unwrap());
 static RE_IMG2: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[image-\d*\]\((http.*?)\)").unwrap());
 
@@ -14,7 +13,11 @@ fn bytes_md5_hex(bytes: &[u8]) -> String {
     format!("{:x}", md5::compute(bytes))
 }
 
-async fn download_img(client: &Client, url: &str, img_path: &std::path::Path) -> anyhow::Result<String> {
+async fn download_img(
+    client: &Client,
+    url: &str,
+    img_path: &std::path::Path,
+) -> anyhow::Result<String> {
     if !img_path.exists() {
         std::fs::create_dir_all(img_path)?;
     }

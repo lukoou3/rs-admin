@@ -20,9 +20,7 @@ pub struct MaintenanceConfig {
 }
 
 fn is_sqlite_url(url: &str) -> bool {
-    url.trim_start()
-        .to_ascii_lowercase()
-        .starts_with("sqlite:")
+    url.trim_start().to_ascii_lowercase().starts_with("sqlite:")
 }
 
 fn env_bool(key: &str, default: bool) -> bool {
@@ -174,7 +172,11 @@ pub fn load(args: &CliArgs) -> Config {
         .database
         .as_deref()
         .map(normalize_database_url)
-        .or_else(|| env::var("DATABASE_URL").ok().map(|v| normalize_database_url(&v)))
+        .or_else(|| {
+            env::var("DATABASE_URL")
+                .ok()
+                .map(|v| normalize_database_url(&v))
+        })
         .unwrap_or_else(default_database_url);
     let listen = args
         .listen

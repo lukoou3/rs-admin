@@ -1,13 +1,13 @@
 //! 对齐 gin `tools/clearDeleteData`：列出含 `deleted_at` 的表、预览软删数据、物理清除。
-use crate::error::{AppError, AppResult};
 use crate::AppState;
+use crate::error::{AppError, AppResult};
 use axum::extract::{Query, State};
 use axum::routing::delete;
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde::Serialize;
-use sqlx::{Column, Row};
 use sqlx::SqlitePool;
+use sqlx::{Column, Row};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,8 +56,7 @@ pub async fn purge_all_soft_deleted(pool: &SqlitePool) -> Result<u64, sqlx::Erro
         let sql = format!(
             r#"DELETE FROM "{}" WHERE deleted_at IS NOT NULL
                AND datetime(deleted_at) < datetime('now', 'localtime', '-{} months')"#,
-            t,
-            AUTO_PURGE_SOFT_DELETE_OLDER_MONTHS
+            t, AUTO_PURGE_SOFT_DELETE_OLDER_MONTHS
         );
         let r = sqlx::query(&sql).execute(pool).await?;
         total += r.rows_affected();
@@ -71,11 +70,7 @@ pub async fn vacuum_sqlite(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 }
 
 fn validate_identifier(name: &str) -> AppResult<()> {
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(AppError::BadRequest("非法表名".into()));
     }
     Ok(())
@@ -111,7 +106,7 @@ async fn pragma_columns(pool: &SqlitePool, table: &str) -> Result<Vec<String>, s
 }
 
 fn decode_cell(row: &sqlx::sqlite::SqliteRow, i: usize) -> serde_json::Value {
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     if let Ok(v) = row.try_get::<Option<i64>, _>(i) {
         return match v {
             Some(n) => json!(n),
@@ -169,7 +164,9 @@ pub async fn preview_table(
         .await
         .map_err(AppError::from)?;
 
-    let columns = pragma_columns(&state.pool, table).await.map_err(AppError::from)?;
+    let columns = pragma_columns(&state.pool, table)
+        .await
+        .map_err(AppError::from)?;
     let data: Vec<serde_json::Value> = rows.iter().map(|r| row_to_json(r)).collect();
 
     Ok(Json(PreviewResp { columns, data }))
@@ -194,10 +191,7 @@ pub async fn clear_deleted_rows(pool: &SqlitePool, table: &str) -> AppResult<Jso
         return Err(AppError::BadRequest("表不存在或无 deleted_at 字段".into()));
     }
 
-    let sql = format!(
-        r#"DELETE FROM "{}" WHERE deleted_at > '2020-01-01'"#,
-        table
-    );
+    let sql = format!(r#"DELETE FROM "{}" WHERE deleted_at > '2020-01-01'"#, table);
     let r = sqlx::query(&sql)
         .execute(pool)
         .await

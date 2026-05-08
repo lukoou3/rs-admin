@@ -46,6 +46,22 @@ const router = createRouter({
           component: () => import("@/views/QueryPlatformView.vue"),
         },
         {
+          path: "tools/json",
+          component: () => import("@/views/JsonToolView.vue"),
+        },
+        {
+          path: "tools/encode",
+          component: () => import("@/views/EncodeToolView.vue"),
+        },
+        {
+          path: "tools/http",
+          component: () => import("@/views/HttpToolView.vue"),
+        },
+        {
+          path: "tools/timestamp",
+          component: () => import("@/views/TimestampToolView.vue"),
+        },
+        {
           path: "tools/cron",
           component: () => import("@/views/CronToolView.vue"),
         },

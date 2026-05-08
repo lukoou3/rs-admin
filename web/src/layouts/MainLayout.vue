@@ -38,6 +38,10 @@ const route = useRoute();
           <template #title>
             <span class="submenu-title">工具</span>
           </template>
+          <el-menu-item index="/tools/json">JSON 工具</el-menu-item>
+          <el-menu-item index="/tools/encode">编码工具</el-menu-item>
+          <el-menu-item index="/tools/http">HTTP 工具</el-menu-item>
+          <el-menu-item index="/tools/timestamp">时间戳</el-menu-item>
           <el-menu-item index="/tools/cron">Cron 表达式</el-menu-item>
           <el-menu-item index="/tools/clear-delete-data">清除软删数据</el-menu-item>
           <el-menu-item index="/tools/html2md">HTML 转 MD</el-menu-item>

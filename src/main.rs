@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_rolling_file::{RollingConditionBase, RollingFileAppenderBase};
 use tracing_subscriber::{
     EnvFilter, Registry,
@@ -6,7 +7,6 @@ use tracing_subscriber::{
     layer::SubscriberExt,
     util::SubscriberInitExt,
 };
-use tracing_appender::non_blocking::WorkerGuard;
 
 /// 日志行内时间戳：本地时间（与 SQLite `localtime` 等业务一致）。
 #[derive(Clone, Copy)]
@@ -81,10 +81,7 @@ fn init_logging() -> Result<Option<WorkerGuard>> {
                     )
                     .init();
             } else {
-                Registry::default()
-                    .with(env_filter)
-                    .with(file_layer)
-                    .init();
+                Registry::default().with(env_filter).with(file_layer).init();
             }
             return Ok(Some(log_guard));
         }

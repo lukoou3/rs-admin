@@ -1,4 +1,4 @@
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
@@ -175,11 +175,7 @@ pub async fn create(pool: &SqlitePool, body: &SysUserCreate) -> Result<i64, sqlx
     Ok(id)
 }
 
-pub async fn update(
-    pool: &SqlitePool,
-    id: i64,
-    body: &SysUserUpdate,
-) -> Result<u64, sqlx::Error> {
+pub async fn update(pool: &SqlitePool, id: i64, body: &SysUserUpdate) -> Result<u64, sqlx::Error> {
     let existing = get_by_id(pool, id).await?;
     let Some(cur) = existing else {
         return Ok(0);

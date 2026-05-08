@@ -68,9 +68,8 @@ impl ExecScriptEngine {
             return Err(AppError::BadRequest("interpreter 不能为空".into()));
         }
 
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&req.params).map_err(
-            |_| AppError::BadRequest("params 必须是合法 JSON 对象".into()),
-        )?;
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&req.params)
+            .map_err(|_| AppError::BadRequest("params 必须是合法 JSON 对象".into()))?;
 
         {
             let m = self.runs.read().await;
@@ -85,28 +84,27 @@ impl ExecScriptEngine {
         let params_map: serde_json::Map<String, serde_json::Value> =
             serde_json::from_str(&req.params).unwrap();
 
-        let (script_path, temp_keep): (String, Option<tempfile::NamedTempFile>) =
-            if req.cate == 1 {
-                let p = req.content.trim().to_string();
-                if p.is_empty() {
-                    return Err(AppError::BadRequest("content 作为路径时不能为空".into()));
-                }
-                if !Path::new(&p).exists() {
-                    return Err(AppError::BadRequest("脚本路径不存在".into()));
-                }
-                (p, None)
-            } else {
-                let mut f = tempfile::Builder::new()
-                    .suffix(".exec_script")
-                    .tempfile()
-                    .map_err(|e| AppError::BadRequest(format!("创建临时文件失败: {e}")))?;
-                use std::io::Write;
-                f.write_all(req.content.as_bytes())
-                    .map_err(|e| AppError::BadRequest(format!("写入临时文件失败: {e}")))?;
-                f.flush().ok();
-                let path = f.path().to_string_lossy().into_owned();
-                (path, Some(f))
-            };
+        let (script_path, temp_keep): (String, Option<tempfile::NamedTempFile>) = if req.cate == 1 {
+            let p = req.content.trim().to_string();
+            if p.is_empty() {
+                return Err(AppError::BadRequest("content 作为路径时不能为空".into()));
+            }
+            if !Path::new(&p).exists() {
+                return Err(AppError::BadRequest("脚本路径不存在".into()));
+            }
+            (p, None)
+        } else {
+            let mut f = tempfile::Builder::new()
+                .suffix(".exec_script")
+                .tempfile()
+                .map_err(|e| AppError::BadRequest(format!("创建临时文件失败: {e}")))?;
+            use std::io::Write;
+            f.write_all(req.content.as_bytes())
+                .map_err(|e| AppError::BadRequest(format!("写入临时文件失败: {e}")))?;
+            f.flush().ok();
+            let path = f.path().to_string_lossy().into_owned();
+            (path, Some(f))
+        };
 
         let mut argv: Vec<String> = vec![script_path];
         for (k, v) in params_map {
@@ -172,14 +170,8 @@ impl ExecScriptEngine {
             let stdout = child.stdout.take();
             let stderr = child.stderr.take();
 
-            let h1 = tokio::spawn(drain_reader_opt(
-                stdout,
-                stdout_buf.clone(),
-            ));
-            let h2 = tokio::spawn(drain_reader_opt(
-                stderr,
-                stderr_buf.clone(),
-            ));
+            let h1 = tokio::spawn(drain_reader_opt(stdout, stdout_buf.clone()));
+            let h2 = tokio::spawn(drain_reader_opt(stderr, stderr_buf.clone()));
 
             let status = child.wait().await;
             let _ = tokio::join!(h1, h2);

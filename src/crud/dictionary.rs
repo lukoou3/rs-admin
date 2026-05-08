@@ -10,7 +10,10 @@ pub struct DictEntry {
     pub value: i64,
 }
 
-pub async fn list_by_type(pool: &SqlitePool, dict_type: &str) -> Result<Vec<DictEntry>, sqlx::Error> {
+pub async fn list_by_type(
+    pool: &SqlitePool,
+    dict_type: &str,
+) -> Result<Vec<DictEntry>, sqlx::Error> {
     sqlx::query_as::<_, DictEntry>(
         r#"SELECT d.label AS label, d.value AS value
            FROM sys_dictionary_details d

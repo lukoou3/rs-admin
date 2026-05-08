@@ -125,7 +125,9 @@ mod tests {
     #[test]
     fn html_to_md_list_inline_markdown() {
         let u = Html2mdUtil::default();
-        let r = u.html_to_md("<ul><li>a <strong>b</strong></li></ul>").unwrap();
+        let r = u
+            .html_to_md("<ul><li>a <strong>b</strong></li></ul>")
+            .unwrap();
         assert!(r.contains("**b**"));
     }
 }

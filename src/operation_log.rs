@@ -1,10 +1,10 @@
 //! 将已认证 API 请求元数据写入 `sys_operation_records`（不做 body/resp 记录；不记录 GET）。
+use crate::AppState;
 use crate::auth::Claims;
 use crate::crud::operation_record;
-use crate::AppState;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, Method, Request};
+use axum::http::{Method, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use std::time::Instant;
@@ -40,11 +40,7 @@ fn client_ip<B>(req: &Request<B>) -> String {
             }
         }
     }
-    if let Some(xr) = req
-        .headers()
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(xr) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
         let s = xr.trim();
         if !s.is_empty() {
             return s.to_string();
@@ -53,11 +49,7 @@ fn client_ip<B>(req: &Request<B>) -> String {
     String::new()
 }
 
-pub async fn middleware(
-    State(state): State<AppState>,
-    req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn middleware(State(state): State<AppState>, req: Request<Body>, next: Next) -> Response {
     // 与常见配置一致：不记录 GET，避免列表/轮询刷爆表。
     if *req.method() == Method::GET {
         return next.run(req).await;
@@ -88,14 +80,7 @@ pub async fn middleware(
     let pool = state.pool.clone();
     tokio::spawn(async move {
         if let Err(e) = operation_record::insert_metadata(
-            &pool,
-            user_id,
-            &ip,
-            &method,
-            &path,
-            status,
-            latency_ns,
-            &agent,
+            &pool, user_id, &ip, &method, &path, status, latency_ns, &agent,
         )
         .await
         {

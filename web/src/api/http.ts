@@ -34,8 +34,17 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
+  const body = init?.body;
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+  const isBlob = typeof Blob !== "undefined" && body instanceof Blob;
+  const isArrayBuffer =
+    typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer;
+  const isUrlSearchParams =
+    typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
+  const isRawBody = isFormData || isBlob || isArrayBuffer || isUrlSearchParams;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isRawBody ? {} : { "Content-Type": "application/json" }),
     ...(init?.headers as Record<string, string> | undefined),
   };
   const tok = getToken();

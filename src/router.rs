@@ -9,13 +9,18 @@ use crate::exec_script_engine::{ExecScriptRunBody, RunInfoResponse};
 use crate::html2md;
 use crate::list_params::ListParams;
 use crate::tools_clear_delete;
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
+use sha2::{Sha256, Sha512};
 use sqlx::{Column, Row};
+use std::time::{Duration, Instant};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +104,9 @@ pub fn routes(state: AppState) -> Router {
         .nest("/operation-records", operation_records_routes())
         .route("/query-platform/query", post(query_platform_query))
         .route("/tools/html2md", post(tools_html2md))
+        .route("/tools/http/request", post(tools_http_request))
+        .route("/tools/encode/hash/text", post(tools_encode_hash_text))
+        .route("/tools/encode/hash/file", post(tools_encode_hash_file))
         .nest("/tools/clear-delete-data", tools_clear_delete::routes())
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -307,6 +315,295 @@ async fn tools_html2md(
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     Ok(Json(resp))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpHeaderInput {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpToolReq {
+    method: String,
+    url: String,
+    #[serde(default)]
+    headers: Vec<HttpHeaderInput>,
+    #[serde(default)]
+    body: String,
+    timeout_secs: Option<u64>,
+    max_body_bytes: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpHeaderOut {
+    key: String,
+    value: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpToolResp {
+    status: u16,
+    status_text: String,
+    elapsed_ms: u128,
+    headers: Vec<HttpHeaderOut>,
+    body: String,
+    body_size: usize,
+    truncated: bool,
+}
+
+async fn tools_http_request(Json(body): Json<HttpToolReq>) -> AppResult<Json<HttpToolResp>> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(reqwest::Client::new);
+
+    let method = body
+        .method
+        .parse::<reqwest::Method>()
+        .map_err(|e| AppError::BadRequest(format!("HTTP 方法无效: {e}")))?;
+    let url = reqwest::Url::parse(body.url.trim())
+        .map_err(|e| AppError::BadRequest(format!("URL 无效: {e}")))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(AppError::BadRequest("只支持 http/https URL".into()));
+    }
+
+    let timeout = body.timeout_secs.unwrap_or(20).clamp(1, 300);
+    let max_body_bytes = body
+        .max_body_bytes
+        .unwrap_or(2 * 1024 * 1024)
+        .clamp(1024, 20 * 1024 * 1024);
+
+    let mut req = client
+        .request(method, url)
+        .timeout(Duration::from_secs(timeout));
+    for header in body.headers {
+        let key = header.key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let name = reqwest::header::HeaderName::from_bytes(key.as_bytes())
+            .map_err(|e| AppError::BadRequest(format!("请求头名称无效 {key}: {e}")))?;
+        let value = reqwest::header::HeaderValue::from_str(&header.value)
+            .map_err(|e| AppError::BadRequest(format!("请求头值无效 {key}: {e}")))?;
+        req = req.header(name, value);
+    }
+    if !body.body.is_empty() {
+        req = req.body(body.body);
+    }
+
+    let start = Instant::now();
+    let mut resp = req
+        .send()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("请求失败: {e}")))?;
+    let status = resp.status();
+    let headers = resp
+        .headers()
+        .iter()
+        .map(|(key, value)| HttpHeaderOut {
+            key: key.as_str().to_string(),
+            value: value.to_str().unwrap_or("<非 UTF-8 响应头>").to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    let mut bytes = Vec::new();
+    let mut body_size = 0usize;
+    let mut truncated = false;
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("读取响应失败: {e}")))?
+    {
+        body_size = body_size.saturating_add(chunk.len());
+        let remaining = max_body_bytes.saturating_sub(bytes.len());
+        if remaining == 0 {
+            truncated = true;
+            continue;
+        }
+        if chunk.len() > remaining {
+            bytes.extend_from_slice(&chunk[..remaining]);
+            truncated = true;
+        } else {
+            bytes.extend_from_slice(&chunk);
+        }
+    }
+
+    Ok(Json(HttpToolResp {
+        status: status.as_u16(),
+        status_text: status.canonical_reason().unwrap_or("").to_string(),
+        elapsed_ms: start.elapsed().as_millis(),
+        headers,
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+        body_size,
+        truncated,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HashTextBody {
+    text: String,
+    #[serde(default)]
+    algorithms: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HashResp {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    md5: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha1: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sha512: Option<String>,
+    size: u64,
+    file_name: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct HashAlgorithms {
+    md5: bool,
+    sha1: bool,
+    sha256: bool,
+    sha512: bool,
+}
+
+impl Default for HashAlgorithms {
+    fn default() -> Self {
+        Self {
+            md5: true,
+            sha1: false,
+            sha256: false,
+            sha512: false,
+        }
+    }
+}
+
+impl HashAlgorithms {
+    fn from_names(names: &[String]) -> AppResult<Self> {
+        if names.is_empty() {
+            return Ok(Self::default());
+        }
+
+        let mut out = Self {
+            md5: false,
+            sha1: false,
+            sha256: false,
+            sha512: false,
+        };
+        for name in names {
+            match name.trim().to_ascii_lowercase().as_str() {
+                "md5" => out.md5 = true,
+                "sha1" | "sha-1" => out.sha1 = true,
+                "sha256" | "sha-256" => out.sha256 = true,
+                "sha512" | "sha-512" => out.sha512 = true,
+                "" => {}
+                other => {
+                    return Err(AppError::BadRequest(format!("不支持的 Hash 算法: {other}")));
+                }
+            }
+        }
+        if out.md5 || out.sha1 || out.sha256 || out.sha512 {
+            Ok(out)
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    fn from_csv(value: Option<&str>) -> AppResult<Self> {
+        let names = value
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        Self::from_names(&names)
+    }
+}
+
+struct HashState {
+    md5: Option<md5::Context>,
+    sha1: Option<Sha1>,
+    sha256: Option<Sha256>,
+    sha512: Option<Sha512>,
+    size: u64,
+}
+
+impl HashState {
+    fn new(algorithms: HashAlgorithms) -> Self {
+        Self {
+            md5: algorithms.md5.then(md5::Context::new),
+            sha1: algorithms.sha1.then(Sha1::new),
+            sha256: algorithms.sha256.then(Sha256::new),
+            sha512: algorithms.sha512.then(Sha512::new),
+            size: 0,
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        if let Some(md5) = &mut self.md5 {
+            md5.consume(bytes);
+        }
+        if let Some(sha1) = &mut self.sha1 {
+            sha1.update(bytes);
+        }
+        if let Some(sha256) = &mut self.sha256 {
+            sha256.update(bytes);
+        }
+        if let Some(sha512) = &mut self.sha512 {
+            sha512.update(bytes);
+        }
+        self.size += bytes.len() as u64;
+    }
+
+    fn finish(self, file_name: Option<String>) -> HashResp {
+        HashResp {
+            md5: self.md5.map(|ctx| format!("{:x}", ctx.finalize())),
+            sha1: self.sha1.map(|ctx| format!("{:x}", ctx.finalize())),
+            sha256: self.sha256.map(|ctx| format!("{:x}", ctx.finalize())),
+            sha512: self.sha512.map(|ctx| format!("{:x}", ctx.finalize())),
+            size: self.size,
+            file_name,
+        }
+    }
+}
+
+fn hash_bytes(bytes: &[u8], file_name: Option<String>, algorithms: HashAlgorithms) -> HashResp {
+    let mut state = HashState::new(algorithms);
+    state.update(bytes);
+    state.finish(file_name)
+}
+
+async fn tools_encode_hash_text(Json(body): Json<HashTextBody>) -> AppResult<Json<HashResp>> {
+    let algorithms = HashAlgorithms::from_names(&body.algorithms)?;
+    Ok(Json(hash_bytes(body.text.as_bytes(), None, algorithms)))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HashFileQuery {
+    file_name: Option<String>,
+    algorithms: Option<String>,
+}
+
+async fn tools_encode_hash_file(
+    Query(q): Query<HashFileQuery>,
+    body: Body,
+) -> AppResult<Json<HashResp>> {
+    let mut stream = body.into_data_stream();
+    let algorithms = HashAlgorithms::from_csv(q.algorithms.as_deref())?;
+    let mut state = HashState::new(algorithms);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| AppError::BadRequest(format!("读取上传文件失败: {e}")))?;
+        state.update(&chunk);
+    }
+    Ok(Json(state.finish(q.file_name)))
 }
 
 async fn dictionary_by_type(

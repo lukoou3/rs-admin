@@ -67,7 +67,10 @@ pub async fn list(
     data_qb.push_bind(limit);
     data_qb.push(" OFFSET ");
     data_qb.push_bind(offset);
-    let rows = data_qb.build_query_as::<Shellcode>().fetch_all(pool).await?;
+    let rows = data_qb
+        .build_query_as::<Shellcode>()
+        .fetch_all(pool)
+        .await?;
 
     Ok((rows, total))
 }

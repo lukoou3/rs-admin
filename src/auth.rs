@@ -1,12 +1,12 @@
 //! JWT（HS256）与 Bearer 校验；Claims 挂在 request extensions。
-use crate::error::AppError;
 use crate::AppState;
+use crate::error::AppError;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{header, HeaderValue, Request};
+use axum::http::{HeaderValue, Request, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

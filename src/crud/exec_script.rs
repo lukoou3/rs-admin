@@ -97,9 +97,8 @@ pub async fn list(
     limit: i64,
     f: &ExecScriptListFilter,
 ) -> Result<(Vec<ExecScript>, i64), sqlx::Error> {
-    let mut count_qb = QueryBuilder::<Sqlite>::new(
-        "SELECT COUNT(*) FROM exec_script WHERE deleted_at IS NULL ",
-    );
+    let mut count_qb =
+        QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM exec_script WHERE deleted_at IS NULL ");
     push_exec_script_filters(&mut count_qb, f);
     let total: i64 = count_qb.build_query_scalar().fetch_one(pool).await?;
 
@@ -151,7 +150,11 @@ pub async fn create(pool: &SqlitePool, body: &ExecScriptUpsert) -> Result<i64, s
     Ok(id)
 }
 
-pub async fn update(pool: &SqlitePool, id: i64, body: &ExecScriptUpsert) -> Result<u64, sqlx::Error> {
+pub async fn update(
+    pool: &SqlitePool,
+    id: i64,
+    body: &ExecScriptUpsert,
+) -> Result<u64, sqlx::Error> {
     let r = sqlx::query(
         r#"UPDATE exec_script
            SET updated_at = datetime('now', 'localtime'), name = ?, cate = ?, interpreter = ?, encoding = ?,

@@ -81,9 +81,8 @@ pub async fn list(
     limit: i64,
     f: &CodeTemplateListFilter,
 ) -> Result<(Vec<CodeTemplate>, i64), sqlx::Error> {
-    let mut count_qb = QueryBuilder::<Sqlite>::new(
-        "SELECT COUNT(*) FROM code_template WHERE deleted_at IS NULL",
-    );
+    let mut count_qb =
+        QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM code_template WHERE deleted_at IS NULL");
     push_filters(&mut count_qb, f);
     let total: i64 = count_qb.build_query_scalar().fetch_one(pool).await?;
 

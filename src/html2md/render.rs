@@ -7,8 +7,7 @@ use std::sync::LazyLock;
 
 static SEL_H: LazyLock<Selector> =
     LazyLock::new(|| Selector::parse("h1, h2, h3, h4, h5, h6").unwrap());
-static SEL_NOSCRIPT: LazyLock<Selector> =
-    LazyLock::new(|| Selector::parse("noscript").unwrap());
+static SEL_NOSCRIPT: LazyLock<Selector> = LazyLock::new(|| Selector::parse("noscript").unwrap());
 static SEL_IMG: LazyLock<Selector> = LazyLock::new(|| Selector::parse("img").unwrap());
 static SEL_OL_LI: LazyLock<Selector> = LazyLock::new(|| Selector::parse("ol li").unwrap());
 static RE_NUM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+$").unwrap());
@@ -34,11 +33,9 @@ fn trim_space_data(s: &str, strip: bool) -> String {
 
 /// 与原 `outTagText` 的 line_map / line_map2 一致（不含 h6）。
 fn line_maps() -> (HashSet<&'static str>, HashSet<&'static str>) {
-    let line_map: HashSet<_> = [
-        "br", "p", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5",
-    ]
-    .into_iter()
-    .collect();
+    let line_map: HashSet<_> = ["br", "p", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5"]
+        .into_iter()
+        .collect();
     let line_map2: HashSet<_> = ["p", "div", "ul", "ol", "h1", "h2", "h3", "h4", "h5"]
         .into_iter()
         .collect();
@@ -187,19 +184,14 @@ fn render_element(el: ElementRef<'_>, ctx: &RenderCtx<'_>, strip: bool) -> Strin
         "br" => "\n".to_string(),
         "a" => {
             let href = el.attr("href").unwrap_or("").trim().to_string();
-            let text = render_children_inline(el, ctx, strip)
-                .trim()
-                .to_string();
+            let text = render_children_inline(el, ctx, strip).trim().to_string();
             if href.is_empty() && text.is_empty() {
                 return String::new();
             }
             if href.contains("so.csdn.net/so/search") {
                 text
             } else {
-                format_str(
-                    "[{1}]({0} \"{1}\")",
-                    &[href.clone(), text.clone()],
-                )
+                format_str("[{1}]({0} \"{1}\")", &[href.clone(), text.clone()])
             }
         }
         "img" => render_img_el(&el),
@@ -207,24 +199,15 @@ fn render_element(el: ElementRef<'_>, ctx: &RenderCtx<'_>, strip: bool) -> Strin
             let num: i32 = tag.trim_start_matches('h').parse().unwrap_or(1);
             let extra = ctx.h_level.get(&num).copied().unwrap_or(0);
             let hashes = "#".repeat(extra);
-            let inner = render_children_inline(el, ctx, strip)
-                .trim()
-                .to_string();
+            let inner = render_children_inline(el, ctx, strip).trim().to_string();
             format!("{}{hashes} {inner}", ctx.title_prefix)
         }
         "b" | "strong" => {
-            let inner = render_children_inline(el, ctx, strip)
-                .trim()
-                .to_string();
+            let inner = render_children_inline(el, ctx, strip).trim().to_string();
             format!("**{inner}**")
         }
         "blockquote" => {
-            let inner = el
-                .text()
-                .collect::<Vec<_>>()
-                .join("")
-                .trim()
-                .to_string();
+            let inner = el.text().collect::<Vec<_>>().join("").trim().to_string();
             format!("> {inner}\n\n")
         }
         "ul" | "ol" => render_list(el, ctx, strip),
@@ -292,11 +275,7 @@ fn is_blockish(tag: &str) -> bool {
 }
 
 fn render_img_el(el: &ElementRef<'_>) -> String {
-    if el
-        .value()
-        .classes()
-        .any(|c| c == "look-more-preCode")
-    {
+    if el.value().classes().any(|c| c == "look-more-preCode") {
         return String::new();
     }
     let url = el.attr("src").unwrap_or("");
@@ -311,12 +290,7 @@ fn render_list(el: ElementRef<'_>, ctx: &RenderCtx<'_>, strip: bool) -> String {
         if li.value().name() != "li" {
             continue;
         }
-        let plain_check = li
-            .text()
-            .collect::<Vec<_>>()
-            .join("")
-            .trim()
-            .to_string();
+        let plain_check = li.text().collect::<Vec<_>>().join("").trim().to_string();
         if !not_digit && !RE_NUM.is_match(&plain_check) {
             not_digit = true;
         }
@@ -363,8 +337,7 @@ fn lines_all_numeric(lines: &[String]) -> bool {
 }
 
 fn el_has_class(el: ElementRef<'_>, class: &str) -> bool {
-    el.value()
-        .has_class(class, CaseSensitivity::CaseSensitive)
+    el.value().has_class(class, CaseSensitivity::CaseSensitive)
 }
 
 fn collect_pre_text(el: ElementRef<'_>) -> String {
@@ -380,8 +353,7 @@ fn collect_pre_text(el: ElementRef<'_>) -> String {
                 }
                 if tag == "code" && el_has_class(ce, "hljs-line-numbers") {
                     let inner = ce.text().collect::<Vec<_>>().join("\n");
-                    let lines: Vec<String> =
-                        inner.split('\n').map(|s| s.to_string()).collect();
+                    let lines: Vec<String> = inner.split('\n').map(|s| s.to_string()).collect();
                     if lines_all_numeric(&lines) {
                         continue;
                     }

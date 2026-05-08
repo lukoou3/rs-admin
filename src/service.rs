@@ -2,7 +2,7 @@
 mod windows_impl {
     use crate::config::CliArgs;
     use anyhow::{Context, Result};
-    use std::ffi::{c_void, OsStr};
+    use std::ffi::{OsStr, c_void};
     use std::os::windows::ffi::OsStrExt;
     use std::ptr::{null, null_mut};
     use std::sync::OnceLock;
@@ -10,19 +10,16 @@ mod windows_impl {
     use std::time::Duration;
     use tokio::runtime::Builder;
     use tokio_util::sync::CancellationToken;
-    use windows_sys::Win32::Foundation::{
-        ERROR_FAILED_SERVICE_CONTROLLER_CONNECT, GetLastError,
-    };
+    use windows_sys::Win32::Foundation::{ERROR_FAILED_SERVICE_CONTROLLER_CONNECT, GetLastError};
     use windows_sys::Win32::System::Services::{
         CloseServiceHandle, ControlService, CreateServiceW, DeleteService, OpenSCManagerW,
-        OpenServiceW, QueryServiceStatus, RegisterServiceCtrlHandlerExW, SetServiceStatus,
-        StartServiceCtrlDispatcherW, StartServiceW, SERVICE_ACCEPT_SHUTDOWN, SERVICE_ACCEPT_STOP,
-        SERVICE_AUTO_START, SERVICE_CONTROL_INTERROGATE, SERVICE_CONTROL_SHUTDOWN,
-        SERVICE_CONTROL_STOP, SERVICE_ERROR_NORMAL, SERVICE_RUNNING, SERVICE_START_PENDING,
-        SERVICE_STATUS, SERVICE_STATUS_HANDLE, SERVICE_STOPPED,
-        SERVICE_TABLE_ENTRYW, SERVICE_WIN32_OWN_PROCESS, SC_HANDLE, SC_MANAGER_CONNECT,
-        SC_MANAGER_CREATE_SERVICE, SERVICE_QUERY_STATUS, SERVICE_START, SERVICE_STOP,
-        SERVICE_ALL_ACCESS,
+        OpenServiceW, QueryServiceStatus, RegisterServiceCtrlHandlerExW, SC_HANDLE,
+        SC_MANAGER_CONNECT, SC_MANAGER_CREATE_SERVICE, SERVICE_ACCEPT_SHUTDOWN,
+        SERVICE_ACCEPT_STOP, SERVICE_ALL_ACCESS, SERVICE_AUTO_START, SERVICE_CONTROL_INTERROGATE,
+        SERVICE_CONTROL_SHUTDOWN, SERVICE_CONTROL_STOP, SERVICE_ERROR_NORMAL, SERVICE_QUERY_STATUS,
+        SERVICE_RUNNING, SERVICE_START, SERVICE_START_PENDING, SERVICE_STATUS,
+        SERVICE_STATUS_HANDLE, SERVICE_STOP, SERVICE_STOPPED, SERVICE_TABLE_ENTRYW,
+        SERVICE_WIN32_OWN_PROCESS, SetServiceStatus, StartServiceCtrlDispatcherW, StartServiceW,
     };
 
     pub const SERVICE_NAME: &str = "rs-admin";
@@ -191,11 +188,7 @@ mod windows_impl {
     fn register_service_handler() -> Result<SERVICE_STATUS_HANDLE> {
         let name = to_wide(SERVICE_NAME);
         let handle = unsafe {
-            RegisterServiceCtrlHandlerExW(
-                name.as_ptr(),
-                Some(service_handler),
-                null_mut(),
-            )
+            RegisterServiceCtrlHandlerExW(name.as_ptr(), Some(service_handler), null_mut())
         };
         if handle.is_null() {
             return Err(std::io::Error::last_os_error()).context("注册服务控制处理器失败");
@@ -283,7 +276,7 @@ mod windows_impl {
 #[cfg(not(windows))]
 mod windows_impl {
     use crate::config::CliArgs;
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
 
     pub fn install(_args: &CliArgs) -> Result<()> {
         bail!("Windows Service 仅在 Windows 上可用");
